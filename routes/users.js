@@ -1,9 +1,10 @@
-var express = require('express')
-var router = express.Router()
-var encryption = require('../utils/encryption.js')
-var mail = require('../models/emails.js')
-var usersModel = require('../models/users.js')
-require('dotenv').config()
+var express = require('express');
+var router = express.Router();
+var encryption = require('../utils/encryption.js');
+var mail = require('../models/emails.js');
+var usersModel = require('../models/users.js');
+const axios = require('axios');
+require('dotenv').config();
 
 router.post('/activate-user-account', async function(req, res, next) 
 {
@@ -59,11 +60,38 @@ router.post('/recover-user-password', async function(req, res, next) {
 
 router.post('/sign-in', async function(req, res, next) {
 
-    let email = encryption.decrypt(req.query.email);
+    let email = req.query.email;
     let langId = req.query.langId;
-    let password = encryption.decrypt(req.query.password);
-    let params = [email, password, langId];
-    let data = await usersModel.signIn(params);
+    let accessCode = req.query.accessCode;
+    let params = [email, accessCode, langId];
+
+    axios.post(process.env.API_GEEKST+'/users/sign-in', null, { params: {
+        accessCode: accessCode,
+        email: email,
+        langId: langId
+    }})
+    .then( async function (response) {
+
+        if(response.data.response.statusCode === 1) {
+
+            let data = await usersModel.signIn(params);
+
+        } else {
+
+        }
+
+        res.send(response.data);
+
+    })
+    .catch(function (error) {
+        console.log(error);
+
+        res.send(error);
+
+    });
+
+
+    /*let data = await usersModel.signIn(params);
  
     if(data.response.statusCode === 3)
     {
@@ -79,7 +107,7 @@ router.post('/sign-in', async function(req, res, next) {
         delete data.response.userId;
     }
 
-    res.send(data);
+    res.send(data);*/
 
 })
 
