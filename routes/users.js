@@ -63,18 +63,15 @@ router.post('/sign-in', async function(req, res, next) {
     let email = req.query.email;
     let langId = req.query.langId;
     let accessCode = req.query.accessCode;
-    let params = [email, accessCode, langId];
+    let params = {accessCode: accessCode, email: email};
 
-    axios.post(process.env.API_GEEKST+'/users/sign-in', null, { params: {
-        accessCode: accessCode,
-        email: email,
-        langId: langId
-    }})
+    axios.post(process.env.API_GEEKST+'/users/sign-in', null, { params: params})
     .then( async function (response) {
 
         if(response.data.response.statusCode === 1) {
 
-            let data = await usersModel.signIn(params);
+            let signInParams = [response.data.response.userId, langId];
+            let data = await usersModel.signIn(signInParams);
 
         } else {
 
