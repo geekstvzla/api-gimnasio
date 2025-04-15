@@ -73,6 +73,8 @@ router.post('/sign-in', async function(req, res, next) {
             let signInParams = [response.data.response.userId, langId];
             let data = await usersModel.signIn(signInParams);
 
+            console.log(data)
+
         } else {
 
         }

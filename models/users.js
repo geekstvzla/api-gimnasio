@@ -184,12 +184,7 @@ const signIn = (params) => {
                     } else {
                         
                         let outputParam = JSON.parse(result2[0].response);
-
-                        if(outputParam.response.avatar) {
-                            outputParam.response.avatar = process.env.APP_URL+":"+process.env.APP_PORT+"/images/users/"+outputParam.response.avatar
-                        }
-
-                        resolve(outputParam)
+                        resolve(outputParam);
                         
                     }   
 
