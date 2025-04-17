@@ -152,7 +152,7 @@ const signIn = (params) => {
 
     return new Promise(function(resolve, reject) { 
 
-        let queryString = `CALL sp_sign_in(?,?,@response);`
+        let queryString = `CALL sp_sign_in(?,?,@response);`;
         db.query(queryString, params, function(err, result) {
 
             if(err) {
@@ -163,8 +163,8 @@ const signIn = (params) => {
                         status: "error",
                         statusCode: 0,
                         error: err
-                    }
-                })
+                    };
+                });
     
             } else {
                 
@@ -178,88 +178,33 @@ const signIn = (params) => {
                                 status: "error",
                                 statusCode: 0,
                                 error: err2
-                            }
-                        })
+                            };
+                        });
             
                     } else {
                         
                         let outputParam = JSON.parse(result2[0].response);
                         resolve(outputParam);
                         
-                    }   
+                    };   
 
-                })
+                });
     
-            }
+            };
     
-        })
+        });
 
     }).catch(function(error) {
 
-        return(error)
+        return(error);
       
-    })
+    });
     
-}
-
-const signUp = (params) => {
-
-    return new Promise(function(resolve, reject) { 
-
-        let queryString = `CALL sp_sign_up(?,?,?,?,@response);`
-        db.query(queryString, params, function(err, result) {
-
-            if(err) {
-    
-                reject({
-                    response: {
-                        error: err,
-                        message: "Error executing stored procedure sp_sign_up in line 214",
-                        status: "error",
-                        statusCode: 0
-                    }
-                })
-    
-            } else {
-
-                db.query('SELECT @response as response', (err2, result2) => {
-
-                    if(err2) {
-    
-                        reject({
-                            response: {
-                                error: err2,
-                                message: "Error when trying to execute the query in line 230",
-                                status: "error",
-                                statusCode: 0
-                            }
-                        })
-            
-                    } else {
-                    
-                        let outputParam = JSON.parse(result2[0].response);
-                        resolve(outputParam)
-                        
-                    }   
-
-                })
-    
-            }
-    
-        })
-
-    }).catch(function(error) {
-
-        return(error)
-      
-    })
-    
-}
+};
 
 module.exports = {
     activateAccount,
     checkUsername,
     recoverUserPassword,
-    signIn,
-    signUp
+    signIn
 }
