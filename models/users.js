@@ -163,7 +163,7 @@ const signIn = (params) => {
                         status: "error",
                         statusCode: 0,
                         error: err
-                    };
+                    }
                 });
     
             } else {
@@ -178,7 +178,7 @@ const signIn = (params) => {
                                 status: "error",
                                 statusCode: 0,
                                 error: err2
-                            };
+                            }
                         });
             
                     } else {

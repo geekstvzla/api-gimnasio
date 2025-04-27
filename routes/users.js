@@ -37,26 +37,38 @@ router.get('/encrypt', async function(req, res, next) {
 
 })
 
-router.post('/recover-user-password', async function(req, res, next) {
+router.get('/get-access-code', async function(req, res, next) 
+{
 
-    let email = encryption.decrypt(req.query.email)
+    let email = req.query.email;
     let langId = req.query.langId;
-    let params = [email, langId];
-    let data = await usersModel.recoverUserPassword(params);
+    let params = {email: email, langId: langId};
+  
+    axios.get(process.env.API_GEEKST+'/users/get-access-code', { params: params})
+    .then( async function (response) {
+        console.log(response.data)
+        if(response.data.response.statusCode === 1) {
 
-    if(data.response)
-    {
+            res.send({
+                message: "Se envío el código de acceso a tu correo.",
+                statusCode: 1
+            });
 
-        emailParams = {email: email, password: data.response.password};
-        mail.recoverUserPassword(emailParams);
-        delete data.response.password;
-        delete data.response.sendEmail;
+        } else {
 
-    }
+            res.send(response.data);
 
-    res.send(data);
+        }
 
-})
+    })
+    .catch(function (error) {
+
+        console.log("<-- ERROR -->")
+        res.send(error);
+
+    });
+
+});
 
 router.post('/sign-in', async function(req, res, next) {
 
