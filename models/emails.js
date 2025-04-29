@@ -11,8 +11,29 @@ const activateUserAccount = (params) =>
 
 }
 
-const sendEmailTemplate = (params) => 
+const newUserAccount = (params) => 
 {
+
+    let locale = translation(params.langId)
+    params.from = '"LOGISTICO" <contacto@logistico.com.ve>'
+    params.locals = { url: params.url }
+    params.template = 'newUserAccount/' + locale
+    sendEmailTemplate(params)
+
+}
+
+const userAccessCode = async (params) => 
+{
+
+    let locale = translation(params.langId);
+    params.from = '"Gimtastic" <contacto@gimtastic.com.ve>';
+    params.locals = { accessCode: params.accessCode };
+    params.template = 'userAccessCode/' + locale;
+    sendEmailTemplate(params);
+
+}
+
+const sendEmailTemplate = (params) => {
 
     const email = new Email({
         message: {
@@ -33,28 +54,6 @@ const sendEmailTemplate = (params) =>
     })/*
     .then(console.log)
     .catch(console.error)*/
-
-}
-
-const newUserAccount = (params) => 
-{
-
-    let locale = translation(params.langId)
-    params.from = '"LOGISTICO" <contacto@logistico.com.ve>'
-    params.locals = { url: params.url }
-    params.template = 'newUserAccount/' + locale
-    sendEmailTemplate(params)
-
-}
-
-const recoverUserPassword = async (params) => 
-{
-
-    let locale = translation(params.langId)
-    params.from = '"LOGISTICO" <contacto@logistico.com.ve>'
-    params.locals = { password: params.password }
-    params.template = 'recoverUserPassword/' + locale
-    sendEmailTemplate(params)
 
 }
 
@@ -82,5 +81,5 @@ const translation = (lang) => {
 module.exports = {
     activateUserAccount,
     newUserAccount,
-    recoverUserPassword
+    userAccessCode
 }

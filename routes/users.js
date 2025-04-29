@@ -45,18 +45,22 @@ router.get('/get-access-code', async function(req, res, next)
     let params = {email: email, langId: langId};
   
     axios.get(process.env.API_GEEKST+'/users/get-access-code', { params: params})
-    .then( async function (response) {
-        console.log(response.data)
-        if(response.data.response.statusCode === 1) {
+    .then( async function (rs) {
+        console.log(rs.data)
+        if(rs.data.response.statusCode === 1) {
+
+            emailParams = {accessCode: rs.data.response.accessCode, langId: langId};
+            mail.userAccessCode(emailParams);
 
             res.send({
+                p: params,
                 message: "Se envío el código de acceso a tu correo.",
                 statusCode: 1
             });
 
         } else {
 
-            res.send(response.data);
+            res.send(rs.data);
 
         }
 

@@ -2,16 +2,16 @@ doctype html
 html
     head
         style
-            include ../../../assets/css/emails/recoverUserPassword.less
+            include ../../../assets/css/emails/userAccessCode.less
     <body>
         <div class="wrapper-content">
             <div class="wrapper-logo">
-                <h1>LOGISTICO</h1>
+                <h1>GIMTASTIC</h1>
             </div>
             <div class="content">
-                <h2 class="title">Here's your password! 🔓</h2>
+                <h2 class="title">Here's your access code! 🔓</h2>
                 <p>Because you requested to recover your password, you received this email.</p>
-                <div class="password">#{password}</div>
+                <div class="password">#{accessCode}</div>
             </div>
         </div>
     </body>
