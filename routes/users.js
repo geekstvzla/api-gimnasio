@@ -6,6 +6,13 @@ var usersModel = require('../models/users.js');
 const axios = require('axios');
 require('dotenv').config();
 
+const langs = (lang) => {
+
+    let langData = require('../langs/users/'+lang+'.json');
+    return langData;
+
+}
+
 router.post('/activate-user-account', async function(req, res, next) 
 {
 
@@ -43,26 +50,30 @@ router.get('/get-access-code', async function(req, res, next)
     let email = req.query.email;
     let langId = req.query.langId;
     let params = {email: email, langId: langId};
-  
+    const landData = langs(langId);
+   
     axios.get(process.env.API_GEEKST+'/users/get-access-code', { params: params})
     .then( async function (rs) {
-        console.log(rs.data)
+        
         if(rs.data.response.statusCode === 1) {
-
-            emailParams = {accessCode: rs.data.response.accessCode, langId: langId};
+           
+            emailParams = {accessCode: rs.data.response.accessCode, email: email, langId: langId};
             mail.userAccessCode(emailParams);
 
-            res.send({
-                p: params,
-                message: "Se envío el código de acceso a tu correo.",
-                statusCode: 1
-            });
+            var message = landData.accessCode.success.sendEmail;
+            var statusCode = 1;
 
         } else {
 
-            res.send(rs.data);
+            var message = "PRUEBA";
+            var statusCode = 2;
 
-        }
+        };
+
+        res.send({
+            message: message,
+            statusCode: statusCode
+        });
 
     })
     .catch(function (error) {

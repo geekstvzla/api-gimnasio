@@ -1,5 +1,5 @@
-let transporter = require('../config/mail.js')
-const Email = require('email-templates')
+let transporter = require('../config/mail.js');
+const Email = require('email-templates');
 
 const activateUserAccount = (params) => 
 {
@@ -31,7 +31,7 @@ const userAccessCode = async (params) =>
     params.template = 'userAccessCode/' + locale;
     sendEmailTemplate(params);
 
-}
+};
 
 const sendEmailTemplate = (params) => {
 
@@ -42,7 +42,7 @@ const sendEmailTemplate = (params) => {
         preview: true,
         send: true,
         transport: transporter
-    })
+    });
 
     email
     .send({
@@ -51,7 +51,7 @@ const sendEmailTemplate = (params) => {
             to: params.email
         },
         locals: params
-    })/*
+    });/*
     .then(console.log)
     .catch(console.error)*/
 

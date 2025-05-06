@@ -1,0 +1,7 @@
+{
+    "accessCode": {
+        "success": {
+            "sendEmail": "Se ha envíado el código de acceso a tu correo."
+        }
+    }
+}
