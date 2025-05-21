@@ -5,7 +5,7 @@ const activateUserAccount = (params) =>
 {
     
     let locale = translation(params.langId)
-    params.from = '"LOGISTICO" <contacto@logistico.com.ve>'
+    params.from = '"Gimtastic" <contacto@gimtastic.com.ve>'
     params.template = 'activateUserAccount/' + locale
     sendEmailTemplate(params)
 
@@ -15,7 +15,7 @@ const newUserAccount = (params) =>
 {
 
     let locale = translation(params.langId)
-    params.from = '"LOGISTICO" <contacto@logistico.com.ve>'
+    params.from = '"Gimtastic" <contacto@gimtastic.com.ve>'
     params.locals = { url: params.url }
     params.template = 'newUserAccount/' + locale
     sendEmailTemplate(params)

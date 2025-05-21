@@ -1,7 +1,14 @@
 {
     "accessCode": {
+        "error": {
+            "userDoesntExist": "¡La cuenta de usuario no existe!."
+        },
         "success": {
             "sendEmail": "Se ha envíado el código de acceso a tu correo."
+        },
+        "warning": {
+            "userInactive": "Su cuenta está en estado <b>INACTIVO</b>.",
+            "userPendingVerification": "La cuenta está pendiente de verificación. Te enviamos un correo electrónico para que puedas activarla."
         }
     }
 }
