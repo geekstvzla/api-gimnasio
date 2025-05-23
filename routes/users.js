@@ -18,12 +18,50 @@ router.post('/activate-user-account', async function(req, res, next)
 
     let langId = req.query.langId;
     let userId = encryption.decrypt(req.query.userId);
-    let params = [userId, langId];
-    console.log(params);
-    return;
-    let data = await usersModel.activateAccount(params);
+    let params = {userId: userId, langId: langId};
+    const langData = langs(langId);
+
+    axios.post(process.env.API_GEEKST+'/users/activate-user-account', null, { params: params})
+    .then( async function (rs) {
+      
+        if(rs.data.response.statusCode === 0) {
+
+            var message = langData.activateUserAccount.error.userDoesntExist;
+
+        }else if(rs.data.response.statusCode === 1) {
+           
+            var message = langData.activateUserAccount.success.sendEmail;
+
+        } else if(rs.data.response.statusCode === 2) {
+
+            var message = langData.activateUserAccount.warning.activated;
+
+        } else if(rs.data.response.statusCode === 3) {
+
+            var message = langData.activateUserAccount.error.technicalSupport;
+
+        } else {
+
+            var message = rs.data.response.message;
+
+        };
+
+        res.send({
+            message: message,
+            name: rs.data.response.name,
+            status: rs.data.response.status,
+            statusCode: rs.data.response.statusCode
+        });
+
+    })
+    .catch(function (error) {
+
+        console.log("<-- ERROR -->");
+        console.log(error);
+        res.send(error);
+
+    });
     
-    res.send(data);
 
 })
 
@@ -52,25 +90,25 @@ router.get('/get-access-code', async function(req, res, next)
     let email = req.query.email;
     let langId = req.query.langId;
     let params = {email: email, langId: langId};
-    const landData = langs(langId);
+    const langData = langs(langId);
    
     axios.get(process.env.API_GEEKST+'/users/get-access-code', { params: params})
     .then( async function (rs) {
 
         if(rs.data.response.statusCode === 0) {
 
-            var message = landData.accessCode.error.userDoesntExist;
+            var message = langData.accessCode.error.userDoesntExist;
 
         }else if(rs.data.response.statusCode === 1) {
            
             emailParams = {accessCode: rs.data.response.accessCode, email: email, langId: langId};
             mail.userAccessCode(emailParams);
 
-            var message = landData.accessCode.success.sendEmail;
+            var message = langData.accessCode.success.sendEmail;
 
         } else if(rs.data.response.statusCode === 2) {
 
-            var message = landData.accessCode.warning.userInactive;
+            var message = langData.accessCode.warning.userInactive;
 
         } else if(rs.data.response.statusCode === 3) {
 
@@ -78,7 +116,7 @@ router.get('/get-access-code', async function(req, res, next)
             emailParams = {url: url, email: email, langId: langId};
             mail.activateUserAccount(emailParams);
 
-            var message = landData.accessCode.warning.userPendingVerification;
+            var message = langData.accessCode.warning.userPendingVerification;
 
         } else {
 

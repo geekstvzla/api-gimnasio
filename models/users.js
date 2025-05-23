@@ -1,58 +1,6 @@
 require('dotenv').config()
 let db = require('../config/database.js')
 
-const activateAccount = (params) => {
-
-    return new Promise(function(resolve, reject) { 
-
-        let queryString = `CALL sp_activate_account_user(?,?,@response);`
-        db.query(queryString, params, function(err, result) {
-
-            if(err) {
-    
-                reject({
-                    response: {
-                        message: "Error al tratar de ejecutar la consulta",
-                        status: "error",
-                        statusCode: 0
-                    }
-                })
-    
-            } else {
-
-                db.query('SELECT @response as response', (err2, result2) => {
-
-                    if(err2) {
-    
-                        reject({
-                            response: {
-                                message: "Error al tratar de ejecutar la consulta",
-                                status: "error",
-                                statusCode: 0
-                            }
-                        })
-            
-                    } else {
-                    
-                        let outputParam = JSON.parse(result2[0].response);
-                        resolve(outputParam)
-                        
-                    }   
-
-                })
-    
-            }
-    
-        })
-
-    }).catch(function(error) {
-
-        return(error)
-      
-    })
-
-}
-
 const checkUsername = (params) => {
 
     return new Promise(function(resolve, reject) { 
@@ -203,7 +151,6 @@ const signIn = (params) => {
 };
 
 module.exports = {
-    activateAccount,
     checkUsername,
     recoverUserPassword,
     signIn
