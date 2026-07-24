@@ -8,6 +8,8 @@ app.use(cors());
 
 const generalRouter = require('./routes/general');
 app.use('/general', generalRouter);
+const gymRouter = require('./routes/gym');
+app.use('/gym', gymRouter);
 const usersRouter = require('./routes/users');
 app.use('/users', usersRouter);
 
