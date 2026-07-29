@@ -7,7 +7,7 @@ const gymInfo = (slug) => {
 
         let queryString = `SELECT g.gym_id,
                                   g.name,
-                                  CONCAT('${process.env.API_PUBLIC + "/images/gyms/"}',g.gym_id,'/',g.logo) AS featured_image
+                                  CONCAT('${process.env.API_PUBLIC + "/images/gyms/"}',g.gym_id,'/',g.logo) AS logo
                            FROM gyms g
                            WHERE g.slug = ?;`;
         db.query(queryString, [slug], function (err, result) {

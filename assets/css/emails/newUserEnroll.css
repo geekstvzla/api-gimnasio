@@ -1,8 +1,3 @@
-body {
-    background-color: #F2F6FC;
-    padding: 10px;
-}
-
 .wrapper-content {
     background-color: #fff;
     border-radius: 18px;
@@ -10,54 +5,65 @@ body {
     margin-left: 10%;
     margin-right: 10%;
     margin-top: 5%;
+    padding: 10px;
 }
 
-.wrapper-logo {
+.wrapper-content .wrapper-logo {
     background-color: #000;
     border-top-left-radius: 18px;
     border-top-right-radius: 18px;
     padding: 15px;
 }
 
-.logo {
+.wrapper-content h1 {
+    color: white;
+    text-align: center;
+}
+
+.wrapper-content .logo {
     display: block;
-    height: 80px;
+    height: 70px;
     margin-left: auto;
     margin-right: auto;
     width: auto;
 }
 
-.content {
+.wrapper-content .content {
     padding: 3px;
 }
 
-.title {
+.wrapper-content .content .title {
     text-align: center;
 }
 
-p {
+.wrapper-content .content p {
     text-align: center;
 }
 
-.btn {
+.wrapper-content .content .activation-code {
     background-color: #FBB512;
-    border: 2px solid rgba(0,0,0,0);
-    border-radius: 18px;
+    border: 2px solid #000;
     color: #000;
     display: block;
-    font-size: .8rem;
+    font-size: 35px;
     font-weight: bold;
     margin-bottom: 50px;
     margin-left: auto;
     margin-right: auto;
-    margin-top: 50px;
-    padding: .375rem .75rem;
-    text-decoration: none;
-    text-transform: uppercase;
+    margin-top: 30px;
+    padding: 10px 20px;
     width: fit-content;
 }
 
-.btn:hover {
-    background-color: #000;
-    color: #FBB512;
+@media (max-width: 637px) {
+
+    .wrapper-content {
+        margin-left: 1%;
+        margin-right: 1%;
+    }
+
+    .wrapper-content .logo {
+        height: 50px;
+    }
+
 }

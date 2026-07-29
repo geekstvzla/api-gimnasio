@@ -1,0 +1,11 @@
+extends ../../layout
+
+block head_styles
+    style
+        include ../../../assets/css/emails/newUserEnroll.css
+
+block content
+    h2 ¡Felicidades, tienes una nueva inscripción! 🥳
+    
+    p.message
+        | El participante #[strong #{userName}] se ha registrado para tu evento #[strong #{eventTitle}] con el número de inscripción #[strong #{enrollNumber}].

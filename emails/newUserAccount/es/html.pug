@@ -1,17 +1,16 @@
-doctype html
-html
-    head
-        style
-            include ../../../assets/css/emails/newUserAccount.less
-    <body>
-        <div class="wrapper-content">
-            <div class="wrapper-logo">
-               <h1>LOGISTICO</h1>
-            </div>
-            <div class="content">
-                <h2 class="title">¡Gracias por registrarte! 🎉</h2>
-                <p>Para activar tu cuenta haga click en el enlace a continuación, si no es así, ignore este mensaje.</p>
-                <a class="btn" href="#{url}" class="btn">Activar mi cuenta</a>
-            </div>
-        </div>
-    </body>
+extends ../../layout
+
+block head_styles
+    style
+        include ../../../assets/css/emails/newUserAccount.css
+
+block content
+    h2 ¡Gracias por crear tu cuenta! 🎉
+    
+    p.message
+        | Para activar tu cuenta, debes ingresar el siguiente código de activación:
+
+    table.code-box(cellpadding="0" cellspacing="0")
+        tr
+            td
+                = activationCode
