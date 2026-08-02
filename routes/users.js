@@ -9,10 +9,18 @@ require('dotenv').config();
 
 const langs = (lang) => {
 
-    let langData = require('../langs/users/' + lang + '.json');
-    return langData;
+    try {
 
-}
+        let langKey = lang || 'esp';
+        return require('../langs/users/' + langKey + '.json');
+
+    } catch (e) {
+
+        return require('../langs/users/esp.json');
+
+    }
+
+};
 
 router.post('/activate-user-account', async function (req, res, next) {
 
@@ -472,7 +480,7 @@ router.post('/sign-in', async function (req, res, next) {
 
     axios.post(process.env.API_GEEKST + '/users/sign-in', null, { params: params })
         .then(async function (rs) {
-
+            console.log(rs.data);
             status = rs.data.response.status;
             statusCode = rs.data.response.statusCode;
 

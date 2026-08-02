@@ -14,10 +14,62 @@
     "activateUserAccount": {
         "error": {
             "technicalSupport": "There is a problem trying to activate your account, please contact support.",
-            "userDoesntExist": "User account does not exist."
+            "userDoesntExist": "User account does not exist.",
+            "incorrectCode": "Incorrect activation code."
         },
         "success": "Your account has been successfully activated.",
         "warning": {
-            "activated": "Your account has already been activated."
+            "activated": "Your account has already been activated.",
+            "codeExpired": "The activation code has expired."
+        }
+    },
+    "getBloodTypes": {
+        "success": "Blood types loaded successfully.",
+        "error": "Error getting blood types."
+    },
+    "getCountriesPhoneCodes": {
+        "success": "Phone codes loaded successfully.",
+        "error": "Error getting phone codes."
+    },
+    "getDocumentTypes": {
+        "success": "Document types loaded successfully.",
+        "error": "Error getting document types."
+    },
+    "getGenderTypes": {
+        "success": "Gender types loaded successfully.",
+        "error": "Error getting gender types."
+    },
+    "getUserData": {
+        "success": "User data loaded successfully.",
+        "error": "Error getting user data."
+    },
+    "signIn": {
+        "success": "Signed in successfully.",
+        "warning": {
+            "accessCodeHasExpired": "Access code has expired."
+        },
+        "error": {
+            "accessCodeIsInvalid": "Access code is invalid.",
+            "other": "Error signing in."
+        }
+    },
+    "signUp": {
+        "success": "Sign up completed successfully.",
+        "warning": {
+            "alreadyRegisteredUsername": "Username is already registered."
+        },
+        "error": {
+            "alreadyRegisteredEmail": "Email is already registered.",
+            "other": "Error signing up."
+        }
+    },
+    "updateUserData": {
+        "success": "User data updated successfully.",
+        "error": {
+            "userDoesntExist": "User does not exist.",
+            "userInactive": "User is inactive.",
+            "pendingVerification": "Account pending verification.",
+            "other": "Error updating user data."
         }
     }
+}
