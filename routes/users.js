@@ -480,7 +480,7 @@ router.post('/sign-in', async function (req, res, next) {
 
     axios.post(process.env.API_GEEKST + '/users/sign-in', null, { params: params })
         .then(async function (rs) {
-            console.log(rs.data);
+
             status = rs.data.response.status;
             statusCode = rs.data.response.statusCode;
 
