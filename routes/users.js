@@ -738,4 +738,770 @@ router.get('/get-user-region', async function (req, res, next) {
 
 });
 
+router.post('/update-user-region', async function (req, res, next) {
+
+
+    let params = {
+        userId: req.query.userId || (req.body && req.body.userId),
+        regionId: req.query.regionId || (req.body && req.body.regionId),
+        locality: req.query.locality || (req.body && req.body.locality) || ''
+    };
+
+    axios.post(process.env.API_GEEKST + '/users/update-user-region', null, { params: params })
+        .then(function (rs) {
+            res.send(rs.data);
+        })
+        .catch(function (error) {
+            console.log("<-- ERROR -->", error);
+            res.send(error);
+        });
+
+});
+
+router.get('/check-email', async function (req, res, next) {
+    try {
+        const email = (req.query.email || '').trim().toLowerCase();
+        if (!email) {
+            return res.send({ status: 'success', statusCode: 1, exists: false });
+        }
+        const dbConn = require('../config/database.js');
+        const [rows] = await dbConn.promise().query(
+            `SELECT u.user_id
+             FROM \`geekst\`.users u
+             WHERE LOWER(TRIM(u.email)) = ?
+             UNION
+             SELECT gu.user_id
+             FROM users gu
+             WHERE LOWER(TRIM(gu.email)) = ?
+             LIMIT 1`,
+            [email, email]
+        );
+        const exists = rows && rows.length > 0;
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            exists: exists,
+            message: exists ? 'El correo electrónico ya se encuentra registrado en el sistema.' : 'Correo disponible.'
+        });
+    } catch (error) {
+        console.error('Error checking email:', error);
+        return res.status(500).send({ status: 'error', statusCode: 0, exists: false });
+    }
+});
+
+router.post('/create-user', async function (req, res, next) {
+    try {
+        const payload = Object.assign({}, req.query, req.body);
+        const email = (payload.email || '').trim().toLowerCase();
+        const langId = payload.langId || 'esp';
+        const roleId = parseInt(payload.roleId, 10) || 2;
+        const gymSlug = payload.gymSlug || 'delvallefitness';
+
+        const cleanStr = (val) => {
+            if (val === null || val === undefined) return '';
+            const s = String(val).trim();
+            return (s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') ? '' : s;
+        };
+
+        const normalizePhoneCode = (code) => {
+            const c = cleanStr(code);
+            if (!c) return '+58';
+            return c.startsWith('+') ? c : '+' + c;
+        };
+
+        const firstName = cleanStr(payload.firstName || payload.first_name);
+        const middleName = cleanStr(payload.middleName || payload.middle_name);
+        const lastName = cleanStr(payload.lastName || payload.last_name);
+        const secondLastName = cleanStr(payload.secondLastName || payload.second_last_name);
+        const documentTypeId = payload.documentTypeId || payload.document_type_id || '';
+        const document = cleanStr(payload.document || payload.document_id);
+        const birthday = cleanStr(payload.birthday) || null;
+        const genderId = payload.genderId || payload.gender_id || '';
+        const bloodTypeId = payload.bloodTypeId || payload.blood_type_id || '';
+        const countryPhoneCode = normalizePhoneCode(payload.countryPhoneCode || payload.country_phone_code);
+        const phoneNumber = cleanStr(payload.phoneNumber || payload.phone_number);
+        const countryEmergencyPhoneCode = normalizePhoneCode(payload.countryEmergencyPhoneCode || payload.country_emergency_phone_code);
+        const emergencyPhoneNumber = cleanStr(payload.emergencyPhoneNumber || payload.emergency_phone_number);
+        const medicalCondition = cleanStr(payload.medicalCondition || payload.medical_condition);
+
+        if (!documentTypeId || !document) {
+            return res.status(400).send({
+                status: 'error',
+                statusCode: 0,
+                field: 'document',
+                message: 'El tipo y número de documento son obligatorios.'
+            });
+        }
+
+        if (!email) {
+            return res.status(400).send({
+                status: 'error',
+                statusCode: 0,
+                field: 'email',
+                message: 'El correo electrónico es requerido.'
+            });
+        }
+
+        let dbConn = require('../config/database.js');
+
+        // 1. Validate that document (cédula) is unique in geekst.users (api-users) and gimnasio.users
+        const [existingByDoc] = await dbConn.promise().query(
+            `SELECT u.user_id
+             FROM \`geekst\`.users u
+             WHERE TRIM(u.document_id) = ?
+             UNION
+             SELECT gu.user_id
+             FROM users gu
+             WHERE TRIM(gu.document_id) = ?
+             LIMIT 1`,
+            [document, document]
+        );
+        if (existingByDoc && existingByDoc.length > 0) {
+            return res.send({
+                status: 'error',
+                statusCode: 0,
+                field: 'document',
+                message: 'La cédula o número de documento ingresado ya se encuentra registrado en el sistema.'
+            });
+        }
+
+        // 2. Validate that email is unique in geekst.users (api-users) and gimnasio.users
+        const [existingByEmail] = await dbConn.promise().query(
+            `SELECT u.user_id
+             FROM \`geekst\`.users u
+             WHERE LOWER(TRIM(u.email)) = ?
+             UNION
+             SELECT gu.user_id
+             FROM users gu
+             WHERE LOWER(TRIM(gu.email)) = ?
+             LIMIT 1`,
+            [email, email]
+        );
+        if (existingByEmail && existingByEmail.length > 0) {
+            return res.send({
+                status: 'error',
+                statusCode: 0,
+                field: 'email',
+                message: 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
+            });
+        }
+
+        // 3. Determine or generate unique username and sign up in api-users
+        let baseUsername = (firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (baseUsername.length < 3) baseUsername = 'usr' + baseUsername;
+
+        let geekUserId = '';
+        let username = '';
+        let signUpRs = null;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            username = (attempt === 0 && payload.username)
+                ? payload.username
+                : (baseUsername + Math.floor(100 + Math.random() * 9000));
+
+            try {
+                signUpRs = await axios.post(process.env.API_GEEKST + '/users/sign-up', null, {
+                    params: { email, username, langId }
+                });
+
+                if (signUpRs.data && signUpRs.data.response) {
+                    if (signUpRs.data.response.statusCode === 1) {
+                        geekUserId = signUpRs.data.response.userId;
+                        break;
+                    } else if (signUpRs.data.response.statusCode === 2) {
+                        return res.send({
+                            status: 'error',
+                            statusCode: 0,
+                            field: 'email',
+                            message: 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
+                        });
+                    }
+                }
+            } catch (signUpErr) {
+                console.warn('Fallback direct insert in geekst.users after API_GEEKST sign-up error:', signUpErr.message);
+                break;
+            }
+        }
+
+        // Direct fallback insert into geekst.users + geekst.user_secure_id if geekUserId was not generated by API_GEEKST
+        if (!geekUserId) {
+            username = baseUsername + Math.floor(100 + Math.random() * 9000);
+            const [insertGeekResult] = await dbConn.promise().query(
+                `INSERT INTO \`geekst\`.users (
+                    document_type_id,
+                    document_id,
+                    blood_type_id,
+                    email,
+                    username,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    second_last_name,
+                    gender_id,
+                    birthday,
+                    country_phone_code,
+                    phone_number,
+                    country_emergency_phone_code,
+                    emergency_phone_number,
+                    medical_condition,
+                    status_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                    documentTypeId,
+                    document,
+                    bloodTypeId || null,
+                    email,
+                    username,
+                    firstName,
+                    middleName || null,
+                    lastName,
+                    secondLastName || null,
+                    genderId || null,
+                    birthday,
+                    countryPhoneCode,
+                    phoneNumber,
+                    countryEmergencyPhoneCode,
+                    emergencyPhoneNumber,
+                    medicalCondition
+                ]
+            );
+            const newGeekInternalId = insertGeekResult.insertId;
+            const [uuidRows] = await dbConn.promise().query('SELECT UUID() AS uuid');
+            geekUserId = uuidRows[0].uuid;
+            await dbConn.promise().query(
+                'INSERT INTO `geekst`.user_secure_id (user_id, secure_id) VALUES (?, ?)',
+                [newGeekInternalId, geekUserId]
+            );
+        }
+
+        // Ensure newly created user is active in geekst so initial personal data is persisted
+        await dbConn.promise().query(
+            `UPDATE \`geekst\`.users u
+             INNER JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
+             SET u.status_id = 1
+             WHERE usi.secure_id = ? AND u.status_id = 3`,
+            [geekUserId]
+        );
+
+        // 4. Save initial personal data in api-users for the newly created user
+        const personalDataParams = {
+            userId: geekUserId,
+            firstName: firstName,
+            middleName: middleName,
+            lastName: lastName,
+            secondLastName: secondLastName,
+            documentTypeId: documentTypeId,
+            document: document,
+            birthday: birthday,
+            genderId: genderId,
+            bloodTypeId: bloodTypeId,
+            countryPhoneCode: countryPhoneCode,
+            phoneNumber: phoneNumber,
+            countryEmergencyPhoneCode: countryEmergencyPhoneCode,
+            emergencyPhoneNumber: emergencyPhoneNumber,
+            medicalCondition: medicalCondition,
+            langId: langId
+        };
+
+        try {
+            await axios.post(process.env.API_GEEKST + '/users/update-user-data', null, { params: personalDataParams });
+        } catch (updateErr) {
+            console.warn('API_GEEKST update-user-data warning (handled by direct SQL update):', updateErr.message);
+        }
+
+        // 4. Save initial user region if provided
+        const selectedRegionId = payload.parishId || payload.municipalityId || payload.stateId || null;
+        const locality = cleanStr(payload.locality);
+        if (selectedRegionId) {
+            try {
+                await axios.post(process.env.API_GEEKST + '/users/update-user-region', null, {
+                    params: {
+                        userId: geekUserId,
+                        regionId: selectedRegionId,
+                        locality: locality
+                    }
+                });
+            } catch (regionErr) {
+                console.warn('API_GEEKST update-user-region warning (handled by direct SQL update):', regionErr.message);
+            }
+        }
+
+        // Ensure all personal fields and document_id are persisted in geekst.users
+        await dbConn.promise().query(
+            `UPDATE \`geekst\`.users u
+             INNER JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
+             SET u.first_name = ?,
+                 u.middle_name = ?,
+                 u.last_name = ?,
+                 u.second_last_name = ?,
+                 u.document_type_id = ?,
+                 u.document_id = ?,
+                 u.blood_type_id = ?,
+                 u.gender_id = ?,
+                 u.birthday = ?,
+                 u.country_phone_code = ?,
+                 u.phone_number = ?,
+                 u.country_emergency_phone_code = ?,
+                 u.emergency_phone_number = ?,
+                 u.medical_condition = ?,
+                 u.region_id = COALESCE(?, u.region_id),
+                 u.locality = COALESCE(?, u.locality)
+             WHERE usi.secure_id = ?`,
+            [
+                firstName,
+                middleName || null,
+                lastName,
+                secondLastName || null,
+                documentTypeId,
+                document,
+                bloodTypeId,
+                genderId,
+                birthday,
+                countryPhoneCode,
+                phoneNumber,
+                countryEmergencyPhoneCode,
+                emergencyPhoneNumber,
+                medicalCondition,
+                selectedRegionId,
+                locality,
+                geekUserId
+            ]
+        );
+
+        // Fetch the authoritative record from geekst.users (api-users) to clone into gimnasio.users
+        const [geekUserRows] = await dbConn.promise().query(
+            `SELECT u.document_type_id,
+                    u.document_id,
+                    u.blood_type_id,
+                    u.email,
+                    u.username,
+                    u.first_name,
+                    u.middle_name,
+                    u.last_name,
+                    u.second_last_name,
+                    u.gender_id,
+                    u.region_id,
+                    u.locality,
+                    DATE_FORMAT(u.birthday, "%Y-%m-%d") AS birthday,
+                    u.avatar,
+                    u.country_phone_code,
+                    u.phone_number,
+                    u.country_emergency_phone_code,
+                    u.emergency_phone_number,
+                    u.medical_condition,
+                    u.status_id
+             FROM \`geekst\`.users u
+             INNER JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
+             WHERE usi.secure_id = ? LIMIT 1`,
+            [geekUserId]
+        );
+        const gs = (geekUserRows && geekUserRows.length > 0) ? geekUserRows[0] : {};
+
+        // 5. Validate again in gimnasio.users right before inserting (document and email must not exist)
+        const [existingGymBeforeInsert] = await dbConn.promise().query(
+            `SELECT user_id, document_id, email
+             FROM users
+             WHERE TRIM(document_id) = ? OR LOWER(TRIM(email)) = ? OR geek_user_id = ?
+             LIMIT 1`,
+            [document, email, geekUserId]
+        );
+        if (existingGymBeforeInsert && existingGymBeforeInsert.length > 0) {
+            const dup = existingGymBeforeInsert[0];
+            const isEmailDup = (dup.email || '').trim().toLowerCase() === email;
+            return res.send({
+                status: 'error',
+                statusCode: 0,
+                field: isEmailDup ? 'email' : 'document',
+                message: isEmailDup
+                    ? 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
+                    : 'La cédula o número de documento ingresado ya se encuentra registrado en el sistema.'
+            });
+        }
+
+        // 6. Clone record from geekst.users (api-users) into gimnasio.users
+        let [gymRows] = await dbConn.promise().query('SELECT gym_id FROM gyms WHERE slug = ? LIMIT 1', [gymSlug]);
+        let gymId = (gymRows && gymRows.length > 0) ? gymRows[0].gym_id : 1;
+
+        let [insertUserResult] = await dbConn.promise().query(
+            `INSERT INTO users (
+                geek_user_id,
+                gym_role_id,
+                login_date,
+                status_id,
+                document_type_id,
+                document_id,
+                blood_type_id,
+                email,
+                username,
+                first_name,
+                middle_name,
+                last_name,
+                second_last_name,
+                gender_id,
+                region_id,
+                locality,
+                birthday,
+                avatar,
+                country_phone_code,
+                phone_number,
+                country_emergency_phone_code,
+                emergency_phone_number,
+                medical_condition
+             ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                geekUserId,
+                roleId,
+                gs.status_id || 1,
+                gs.document_type_id || documentTypeId || null,
+                gs.document_id || document || null,
+                gs.blood_type_id || bloodTypeId || null,
+                gs.email || email,
+                gs.username || username || null,
+                gs.first_name !== undefined ? gs.first_name : firstName,
+                gs.middle_name !== undefined ? gs.middle_name : (middleName || null),
+                gs.last_name !== undefined ? gs.last_name : lastName,
+                gs.second_last_name !== undefined ? gs.second_last_name : (secondLastName || null),
+                gs.gender_id || genderId || null,
+                gs.region_id || selectedRegionId || null,
+                gs.locality !== undefined ? gs.locality : (locality || null),
+                gs.birthday || birthday || null,
+                gs.avatar || null,
+                gs.country_phone_code || countryPhoneCode,
+                gs.phone_number !== undefined ? gs.phone_number : phoneNumber,
+                gs.country_emergency_phone_code || countryEmergencyPhoneCode,
+                gs.emergency_phone_number !== undefined ? gs.emergency_phone_number : emergencyPhoneNumber,
+                gs.medical_condition !== undefined ? gs.medical_condition : medicalCondition
+            ]
+        );
+        let gymUserId = insertUserResult.insertId;
+
+        // Insert role in gym_user_roles
+        await dbConn.promise().query(
+            'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, 1)',
+            [gymId, gymUserId, roleId]
+        );
+
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            message: 'Usuario creado exitosamente',
+            user: {
+                userId: gymUserId,
+                geekUserId: geekUserId,
+                email: email,
+                firstName: firstName,
+                middleName: middleName,
+                lastName: lastName,
+                secondLastName: secondLastName,
+                roleId: roleId
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating user in gym:', error);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: error.message || 'Error al crear el usuario en el gimnasio'
+        });
+    }
+});
+
+router.get('/search-by-document', async function (req, res, next) {
+
+    try {
+        const documentTypeId = req.query.documentTypeId;
+        const document = (req.query.document || '').trim();
+        const gymSlug = req.query.gymSlug || 'delvallefitness';
+
+        if (!documentTypeId || !document) {
+            return res.status(400).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'El tipo y número de documento son obligatorios.'
+            });
+        }
+
+        const dbConn = require('../config/database.js');
+
+        // Always query master user table in geekst schema (api-users)
+        let [rows] = await dbConn.promise().query(
+            `SELECT u.user_id,
+                    usi.secure_id,
+                    u.document_type_id,
+                    u.document_id,
+                    u.blood_type_id,
+                    bt.description AS blood_type,
+                    u.email,
+                    u.username,
+                    u.first_name,
+                    u.middle_name,
+                    u.last_name,
+                    u.second_last_name,
+                    u.gender_id,
+                    DATE_FORMAT(u.birthday, "%Y-%m-%d") AS birthday,
+                    u.avatar,
+                    u.country_phone_code,
+                    u.phone_number,
+                    u.country_emergency_phone_code,
+                    u.emergency_phone_number,
+                    u.medical_condition,
+                    u.status_id,
+                    u.region_id,
+                    u.locality
+             FROM \`geekst\`.users u
+             LEFT JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
+             LEFT JOIN \`geekst\`.blood_type bt ON bt.blood_type_id = u.blood_type_id
+             WHERE (u.document_type_id = ? AND TRIM(u.document_id) = ?)
+                OR TRIM(u.document_id) = ?
+             ORDER BY (u.document_type_id = ?) DESC
+             LIMIT 1`,
+            [documentTypeId, document, document, documentTypeId]
+        );
+
+        if (!rows || rows.length === 0) {
+            return res.send({
+                status: 'not_found',
+                statusCode: 0,
+                exists: false,
+                message: 'No se encontró ningún usuario con el documento ingresado.'
+            });
+        }
+
+        const user = rows[0];
+
+        // Ensure the user in geekst has a secure_id in geekst.user_secure_id
+        if (!user.secure_id && user.user_id) {
+            const [uuidRows] = await dbConn.promise().query('SELECT UUID() AS uuid');
+            user.secure_id = uuidRows[0].uuid;
+            await dbConn.promise().query(
+                'INSERT INTO `geekst`.user_secure_id (user_id, secure_id) VALUES (?, ?)',
+                [user.user_id, user.secure_id]
+            );
+        }
+
+        const cleanStr = (val) => {
+            if (val === null || val === undefined) return '';
+            const s = String(val).trim();
+            return (s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') ? '' : s;
+        };
+
+        const normalizePhoneCode = (code) => {
+            const c = cleanStr(code);
+            if (!c) return '+58';
+            return c.startsWith('+') ? c : '+' + c;
+        };
+
+        const firstName = cleanStr(user.first_name);
+        const middleName = cleanStr(user.middle_name);
+        const lastName = cleanStr(user.last_name);
+        const secondLastName = cleanStr(user.second_last_name);
+        const cleanEmail = cleanStr(user.email);
+        const cleanUsername = cleanStr(user.username) || null;
+        const cleanPhoneCode = normalizePhoneCode(user.country_phone_code);
+        const cleanPhone = cleanStr(user.phone_number);
+        const cleanEmergPhoneCode = normalizePhoneCode(user.country_emergency_phone_code);
+        const cleanEmergPhone = cleanStr(user.emergency_phone_number);
+        const cleanMedical = cleanStr(user.medical_condition);
+
+        // Resolve region hierarchy (parish, municipality, state, country)
+        let regionHierarchy = {
+            countryId: '',
+            stateId: '',
+            municipalityId: '',
+            parishId: ''
+        };
+
+        if (user.region_id) {
+            let currentId = Number(user.region_id);
+            while (currentId) {
+                let [rRows] = await dbConn.promise().query(
+                    'SELECT country_region_id, parent_region_id, country_id, level FROM `geekst`.country_regions WHERE country_region_id = ?',
+                    [currentId]
+                );
+                if (rRows && rRows.length > 0) {
+                    let r = rRows[0];
+                    regionHierarchy.countryId = Number(r.country_id);
+                    const lvl = Number(r.level);
+                    if (lvl === 3) regionHierarchy.parishId = Number(r.country_region_id);
+                    else if (lvl === 2) regionHierarchy.municipalityId = Number(r.country_region_id);
+                    else if (lvl === 1) regionHierarchy.stateId = Number(r.country_region_id);
+                    currentId = r.parent_region_id ? Number(r.parent_region_id) : null;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Check if user is already in gimnasio.users (by geek_user_id, document, or email); if not, create the backup record
+        let [gymUserRows] = await dbConn.promise().query(
+            `SELECT user_id, gym_role_id, status_id
+             FROM users
+             WHERE geek_user_id = ?
+                OR (document_type_id = ? AND TRIM(document_id) = ?)
+                OR (email IS NOT NULL AND email <> '' AND LOWER(TRIM(email)) = LOWER(TRIM(?)))
+             LIMIT 1`,
+            [user.secure_id, user.document_type_id, user.document_id, cleanEmail]
+        );
+        let gymRole = null;
+        let isAlreadyGymMember = false;
+        let gymUserId = null;
+
+        if (gymUserRows && gymUserRows.length > 0) {
+            isAlreadyGymMember = true;
+            gymUserId = gymUserRows[0].user_id;
+            gymRole = gymUserRows[0].gym_role_id;
+
+            // Always sync/update gimnasio.users from geekst.users (api-users)
+            await dbConn.promise().query(
+                `UPDATE users
+                 SET geek_user_id = COALESCE(?, geek_user_id),
+                     status_id = COALESCE(?, status_id),
+                     document_type_id = ?,
+                     document_id = ?,
+                     blood_type_id = ?,
+                     email = ?,
+                     username = ?,
+                     first_name = ?,
+                     middle_name = ?,
+                     last_name = ?,
+                     second_last_name = ?,
+                     gender_id = ?,
+                     region_id = ?,
+                     locality = ?,
+                     birthday = ?,
+                     avatar = ?,
+                     country_phone_code = ?,
+                     phone_number = ?,
+                     country_emergency_phone_code = ?,
+                     emergency_phone_number = ?,
+                     medical_condition = ?
+                 WHERE user_id = ?`,
+                [
+                    user.secure_id || null,
+                    user.status_id || 1,
+                    user.document_type_id,
+                    user.document_id,
+                    user.blood_type_id || null,
+                    cleanEmail,
+                    cleanUsername,
+                    firstName,
+                    middleName,
+                    lastName,
+                    secondLastName,
+                    user.gender_id || null,
+                    user.region_id || null,
+                    user.locality || null,
+                    user.birthday || null,
+                    user.avatar || null,
+                    cleanPhoneCode,
+                    cleanPhone,
+                    cleanEmergPhoneCode,
+                    cleanEmergPhone,
+                    cleanMedical,
+                    gymUserId
+                ]
+            );
+        } else {
+            // Automatically clone user from geekst.users (api-users) into gimnasio.users
+            const [insertGymUser] = await dbConn.promise().query(
+                `INSERT INTO users (
+                    geek_user_id,
+                    gym_role_id,
+                    login_date,
+                    status_id,
+                    document_type_id,
+                    document_id,
+                    blood_type_id,
+                    email,
+                    username,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    second_last_name,
+                    gender_id,
+                    region_id,
+                    locality,
+                    birthday,
+                    avatar,
+                    country_phone_code,
+                    phone_number,
+                    country_emergency_phone_code,
+                    emergency_phone_number,
+                    medical_condition
+                 ) VALUES (?, NULL, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    user.secure_id || null,
+                    user.status_id || 1,
+                    user.document_type_id,
+                    user.document_id,
+                    user.blood_type_id || null,
+                    cleanEmail,
+                    cleanUsername,
+                    firstName,
+                    middleName,
+                    lastName,
+                    secondLastName,
+                    user.gender_id || null,
+                    user.region_id || null,
+                    user.locality || null,
+                    user.birthday || null,
+                    user.avatar || null,
+                    cleanPhoneCode,
+                    cleanPhone,
+                    cleanEmergPhoneCode,
+                    cleanEmergPhone,
+                    cleanMedical
+                ]
+            );
+            gymUserId = insertGymUser.insertId;
+        }
+
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            exists: true,
+            message: 'Usuario encontrado en el sistema.',
+            isAlreadyGymMember: isAlreadyGymMember,
+            user: {
+                gymUserId: gymUserId,
+                geekUserId: user.secure_id,
+                documentTypeId: user.document_type_id,
+                document: user.document_id,
+                firstName: firstName,
+                middleName: middleName,
+                lastName: lastName,
+                secondLastName: secondLastName,
+                first_name: firstName,
+                middle_name: middleName,
+                last_name: lastName,
+                second_last_name: secondLastName,
+                bloodTypeId: user.blood_type_id || '',
+                bloodType: user.blood_type || '',
+                genderId: user.gender_id || '',
+                birthday: user.birthday || '',
+                email: cleanEmail,
+                countryPhoneCode: cleanPhoneCode,
+                phoneNumber: cleanPhone,
+                countryEmergencyPhoneCode: cleanEmergPhoneCode,
+                emergencyPhoneNumber: cleanEmergPhone,
+                medicalCondition: cleanMedical,
+                countryId: regionHierarchy.countryId || 1,
+                stateId: regionHierarchy.stateId || '',
+                municipalityId: regionHierarchy.municipalityId || '',
+                parishId: regionHierarchy.parishId || '',
+                gymRoleId: gymRole || ''
+            }
+        });
+
+    } catch (error) {
+        console.error('Error searching user by document:', error);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: error.message || 'Error al buscar el usuario'
+        });
+    }
+});
+
 module.exports = router;

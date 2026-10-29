@@ -58,6 +58,52 @@ const gymInfo = (slug) => {
 
 }
 
-module.exports = {
-    gymInfo
+const getRoles = (langId) => {
+
+    return new Promise(function (resolve, reject) {
+
+        let languageId = (langId === 'eng' || langId === 2 || langId === '2') ? 2 : 1;
+        let queryString = `SELECT gr.gym_role_id AS role_id,
+                                  grl.description AS role_name
+                           FROM gym_roles gr
+                           INNER JOIN gym_roles_lang grl ON grl.gym_role_id = gr.gym_role_id
+                           WHERE gr.status_id = 1 AND grl.language_id = ?
+                           ORDER BY gr.gym_role_id ASC;`;
+        db.query(queryString, [languageId], function (err, result) {
+
+            if (err) {
+
+                reject({
+                    response: {
+                        message: "Error al tratar de ejecutar la consulta de roles",
+                        status: "error",
+                        statusCode: 0
+                    }
+                });
+
+            } else {
+
+                resolve({
+                    response: {
+                        roles: result,
+                        status: "success",
+                        statusCode: 1
+                    }
+                });
+
+            }
+
+        });
+
+    }).catch(function (error) {
+
+        return (error);
+
+    });
+
 }
+
+module.exports = {
+    gymInfo,
+    getRoles
+}

@@ -21,4 +21,14 @@ router.get('/get-gym-info', async function (req, res, next) {
 
 });
 
+router.get('/get-roles', async function (req, res, next) {
+
+
+    let langId = req.query.langId || 'esp';
+    let data = await gymModel.getRoles(langId);
+    res.send(data);
+
+});
+
 module.exports = router;
+
