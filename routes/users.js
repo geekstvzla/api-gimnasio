@@ -46,6 +46,18 @@ router.post('/activate-user-account', async function (req, res, next) {
                 let signInParams = [rs.data.response.userId, langId];
                 let data = await usersModel.signIn(signInParams);
 
+                // If registered via invitation link (client or coach), keep status_id = 3 (Pendiente) in gimnasio.users
+                const registrationType = String(req.query.registration || '').trim().toLowerCase();
+                if (registrationType === 'client' || registrationType === 'coach') {
+                    const roleId = registrationType === 'coach' ? 3 : 2;
+                    const dbConn = require('../config/database.js');
+                    await dbConn.promise().query(
+                        'UPDATE users SET status_id = 3, gym_role_id = COALESCE(gym_role_id, ?) WHERE geek_user_id = ?',
+                        [roleId, rs.data.response.userId]
+                    );
+                    userStatusId = 3;
+                }
+
                 message = langData.activateUserAccount.success;
 
             } else if (statusCode === 2) {
@@ -563,6 +575,9 @@ router.post('/sign-up', async function (req, res, next) {
     let email = req.query.email;
     let langId = req.query.langId;
     let username = req.query.username;
+    let registration = String(req.query.registration || 'client').trim().toLowerCase();
+    let gymSlug = String(req.query.gymSlug || 'delvallefitness').trim();
+    let roleId = (registration === 'coach') ? 3 : 2;
     let params = { email: email, langId: langId, username: username };
     const langData = langs(langId);
     var message = "";
@@ -577,9 +592,52 @@ router.post('/sign-up', async function (req, res, next) {
             userId = (rs.data.response.userId) ? rs.data.response.userId : null;
             userAvatar = (rs.data.response.userAvatar) ? rs.data.response.userAvatar : null;
             username = (rs.data.response.username) ? rs.data.response.username : null;
-            userStatusId = (rs.data.response.userStatusId) ? rs.data.response.userStatusId : null;
+            userStatusId = (rs.data.response.userStatusId) ? rs.data.response.userStatusId : 3;
 
             if (rs.data.response.statusCode === 1) {
+
+                // Clone newly registered user into gimnasio.users with status_id = 3 (Pendiente) and role (client=2, coach=3)
+                try {
+                    const dbConn = require('../config/database.js');
+                    const [gymRows] = await dbConn.promise().query('SELECT gym_id FROM gyms WHERE slug = ? LIMIT 1', [gymSlug]);
+                    const gymId = (gymRows && gymRows.length > 0) ? gymRows[0].gym_id : 1;
+
+                    const [existingGymUser] = await dbConn.promise().query(
+                        'SELECT user_id FROM users WHERE geek_user_id = ? OR LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1',
+                        [userId, email]
+                    );
+
+                    let gymUserId = null;
+                    if (existingGymUser && existingGymUser.length > 0) {
+                        gymUserId = existingGymUser[0].user_id;
+                        await dbConn.promise().query(
+                            'UPDATE users SET geek_user_id = ?, gym_role_id = ?, status_id = 3, email = LOWER(TRIM(?)), username = LOWER(TRIM(?)), login_date = NOW() WHERE user_id = ?',
+                            [userId, roleId, email, username, gymUserId]
+                        );
+                    } else {
+                        const [insertGymRes] = await dbConn.promise().query(
+                            `INSERT INTO users (
+                                geek_user_id,
+                                gym_role_id,
+                                login_date,
+                                status_id,
+                                email,
+                                username
+                             ) VALUES (?, ?, NOW(), 3, LOWER(TRIM(?)), LOWER(TRIM(?)))`,
+                            [userId, roleId, email, username]
+                        );
+                        gymUserId = insertGymRes.insertId;
+                    }
+
+                    if (gymUserId) {
+                        await dbConn.promise().query(
+                            'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, 3)',
+                            [gymId, gymUserId, roleId]
+                        );
+                    }
+                } catch (gymInsertErr) {
+                    console.error('Error registering pending user in gimnasio.users during sign-up:', gymInsertErr);
+                }
 
                 /*let baseUrl = (process.env.NODE_ENV === 'production') ? process.env.APP_URL+":"+process.env.APP_PORT : process.env.APP_URL;
                 let url = baseUrl+"/activate-user-account?userId="+rs.data.response.userId+"&langId="+langId;*/
@@ -794,7 +852,12 @@ router.post('/create-user', async function (req, res, next) {
         const payload = Object.assign({}, req.query, req.body);
         const email = (payload.email || '').trim().toLowerCase();
         const langId = payload.langId || 'esp';
-        const roleId = parseInt(payload.roleId, 10) || 2;
+        const registration = String(payload.registration || '').trim().toLowerCase();
+        const isPublicRegistration = (registration === 'client' || registration === 'coach');
+        const roleId = isPublicRegistration
+            ? (registration === 'coach' ? 3 : 2)
+            : (parseInt(payload.roleId, 10) || 2);
+        const targetStatusId = isPublicRegistration ? 3 : 1;
         const gymSlug = payload.gymSlug || 'delvallefitness';
 
         const cleanStr = (val) => {
@@ -844,134 +907,142 @@ router.post('/create-user', async function (req, res, next) {
 
         let dbConn = require('../config/database.js');
 
-        // 1. Validate that document (cédula) is unique in geekst.users (api-users) and gimnasio.users
-        const [existingByDoc] = await dbConn.promise().query(
-            `SELECT u.user_id
-             FROM \`geekst\`.users u
-             WHERE TRIM(u.document_id) = ?
-             UNION
-             SELECT gu.user_id
-             FROM users gu
-             WHERE TRIM(gu.document_id) = ?
+        // 1. Validate that user is not already registered in this gimnasio.users
+        const [existingInGym] = await dbConn.promise().query(
+            `SELECT user_id, document_id, email
+             FROM users
+             WHERE (document_type_id = ? AND TRIM(document_id) = ?)
+                OR TRIM(document_id) = ?
+                OR (email IS NOT NULL AND email <> '' AND LOWER(TRIM(email)) = ?)
              LIMIT 1`,
-            [document, document]
+            [documentTypeId, document, document, email]
         );
-        if (existingByDoc && existingByDoc.length > 0) {
+        if (existingInGym && existingInGym.length > 0) {
+            const isEmailMatch = (existingInGym[0].email || '').trim().toLowerCase() === email;
             return res.send({
                 status: 'error',
                 statusCode: 0,
-                field: 'document',
-                message: 'La cédula o número de documento ingresado ya se encuentra registrado en el sistema.'
+                field: isEmailMatch ? 'email' : 'document',
+                message: isEmailMatch
+                    ? 'El correo electrónico ingresado ya se encuentra registrado en este gimnasio.'
+                    : 'La cédula o número de documento ingresado ya se encuentra registrado en este gimnasio.'
             });
         }
 
-        // 2. Validate that email is unique in geekst.users (api-users) and gimnasio.users
-        const [existingByEmail] = await dbConn.promise().query(
-            `SELECT u.user_id
+        // 2. Check if user already exists in master table geekst.users (api-users)
+        const [existingInGeekst] = await dbConn.promise().query(
+            `SELECT u.user_id, usi.secure_id, u.email, u.document_id, u.username
              FROM \`geekst\`.users u
-             WHERE LOWER(TRIM(u.email)) = ?
-             UNION
-             SELECT gu.user_id
-             FROM users gu
-             WHERE LOWER(TRIM(gu.email)) = ?
+             LEFT JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
+             WHERE (u.document_type_id = ? AND TRIM(u.document_id) = ?)
+                OR TRIM(u.document_id) = ?
+                OR (u.email IS NOT NULL AND u.email <> '' AND LOWER(TRIM(u.email)) = ?)
              LIMIT 1`,
-            [email, email]
+            [documentTypeId, document, document, email]
         );
-        if (existingByEmail && existingByEmail.length > 0) {
-            return res.send({
-                status: 'error',
-                statusCode: 0,
-                field: 'email',
-                message: 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
-            });
-        }
-
-        // 3. Determine or generate unique username and sign up in api-users
-        let baseUsername = (firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (baseUsername.length < 3) baseUsername = 'usr' + baseUsername;
 
         let geekUserId = '';
         let username = '';
-        let signUpRs = null;
 
-        for (let attempt = 0; attempt < 3; attempt++) {
-            username = (attempt === 0 && payload.username)
-                ? payload.username
-                : (baseUsername + Math.floor(100 + Math.random() * 9000));
+        if (existingInGeekst && existingInGeekst.length > 0) {
+            const eg = existingInGeekst[0];
+            username = eg.username || '';
+            geekUserId = eg.secure_id || '';
 
-            try {
-                signUpRs = await axios.post(process.env.API_GEEKST + '/users/sign-up', null, {
-                    params: { email, username, langId }
-                });
-
-                if (signUpRs.data && signUpRs.data.response) {
-                    if (signUpRs.data.response.statusCode === 1) {
-                        geekUserId = signUpRs.data.response.userId;
-                        break;
-                    } else if (signUpRs.data.response.statusCode === 2) {
-                        return res.send({
-                            status: 'error',
-                            statusCode: 0,
-                            field: 'email',
-                            message: 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
-                        });
-                    }
-                }
-            } catch (signUpErr) {
-                console.warn('Fallback direct insert in geekst.users after API_GEEKST sign-up error:', signUpErr.message);
-                break;
+            if (!geekUserId && eg.user_id) {
+                const [uuidRows] = await dbConn.promise().query('SELECT UUID() AS uuid');
+                geekUserId = uuidRows[0].uuid;
+                await dbConn.promise().query(
+                    'INSERT INTO `geekst`.user_secure_id (user_id, secure_id) VALUES (?, ?)',
+                    [eg.user_id, geekUserId]
+                );
             }
-        }
+        } else {
+            // 3. Brand new user: Determine or generate unique username and sign up in api-users
+            let baseUsername = (firstName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (baseUsername.length < 3) baseUsername = 'usr' + baseUsername;
 
-        // Direct fallback insert into geekst.users + geekst.user_secure_id if geekUserId was not generated by API_GEEKST
-        if (!geekUserId) {
-            username = baseUsername + Math.floor(100 + Math.random() * 9000);
-            const [insertGeekResult] = await dbConn.promise().query(
-                `INSERT INTO \`geekst\`.users (
-                    document_type_id,
-                    document_id,
-                    blood_type_id,
-                    email,
-                    username,
-                    first_name,
-                    middle_name,
-                    last_name,
-                    second_last_name,
-                    gender_id,
-                    birthday,
-                    country_phone_code,
-                    phone_number,
-                    country_emergency_phone_code,
-                    emergency_phone_number,
-                    medical_condition,
-                    status_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-                [
-                    documentTypeId,
-                    document,
-                    bloodTypeId || null,
-                    email,
-                    username,
-                    firstName,
-                    middleName || null,
-                    lastName,
-                    secondLastName || null,
-                    genderId || null,
-                    birthday,
-                    countryPhoneCode,
-                    phoneNumber,
-                    countryEmergencyPhoneCode,
-                    emergencyPhoneNumber,
-                    medicalCondition
-                ]
-            );
-            const newGeekInternalId = insertGeekResult.insertId;
-            const [uuidRows] = await dbConn.promise().query('SELECT UUID() AS uuid');
-            geekUserId = uuidRows[0].uuid;
-            await dbConn.promise().query(
-                'INSERT INTO `geekst`.user_secure_id (user_id, secure_id) VALUES (?, ?)',
-                [newGeekInternalId, geekUserId]
-            );
+            let signUpRs = null;
+
+            for (let attempt = 0; attempt < 3; attempt++) {
+                username = (attempt === 0 && payload.username)
+                    ? payload.username
+                    : (baseUsername + Math.floor(100 + Math.random() * 9000));
+
+                try {
+                    signUpRs = await axios.post(process.env.API_GEEKST + '/users/sign-up', null, {
+                        params: { email, username, langId }
+                    });
+
+                    if (signUpRs.data && signUpRs.data.response) {
+                        if (signUpRs.data.response.statusCode === 1) {
+                            geekUserId = signUpRs.data.response.userId;
+                            break;
+                        } else if (signUpRs.data.response.statusCode === 2) {
+                            return res.send({
+                                status: 'error',
+                                statusCode: 0,
+                                field: 'email',
+                                message: 'El correo electrónico ingresado ya se encuentra registrado en el sistema.'
+                            });
+                        }
+                    }
+                } catch (signUpErr) {
+                    console.warn('Fallback direct insert in geekst.users after API_GEEKST sign-up error:', signUpErr.message);
+                    break;
+                }
+            }
+
+            // Direct fallback insert into geekst.users + geekst.user_secure_id if geekUserId was not generated by API_GEEKST
+            if (!geekUserId) {
+                username = baseUsername + Math.floor(100 + Math.random() * 9000);
+                const [insertGeekResult] = await dbConn.promise().query(
+                    `INSERT INTO \`geekst\`.users (
+                        document_type_id,
+                        document_id,
+                        blood_type_id,
+                        email,
+                        username,
+                        first_name,
+                        middle_name,
+                        last_name,
+                        second_last_name,
+                        gender_id,
+                        birthday,
+                        country_phone_code,
+                        phone_number,
+                        country_emergency_phone_code,
+                        emergency_phone_number,
+                        medical_condition,
+                        status_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                    [
+                        documentTypeId,
+                        document,
+                        bloodTypeId || null,
+                        email,
+                        username,
+                        firstName,
+                        middleName || null,
+                        lastName,
+                        secondLastName || null,
+                        genderId || null,
+                        birthday,
+                        countryPhoneCode,
+                        phoneNumber,
+                        countryEmergencyPhoneCode,
+                        emergencyPhoneNumber,
+                        medicalCondition
+                    ]
+                );
+                const newGeekInternalId = insertGeekResult.insertId;
+                const [uuidRows] = await dbConn.promise().query('SELECT UUID() AS uuid');
+                geekUserId = uuidRows[0].uuid;
+                await dbConn.promise().query(
+                    'INSERT INTO `geekst`.user_secure_id (user_id, secure_id) VALUES (?, ?)',
+                    [newGeekInternalId, geekUserId]
+                );
+            }
         }
 
         // Ensure newly created user is active in geekst so initial personal data is persisted
@@ -1026,7 +1097,7 @@ router.post('/create-user', async function (req, res, next) {
             }
         }
 
-        // Ensure all personal fields and document_id are persisted in geekst.users
+        // Ensure all personal fields, document_id, and targetStatusId are persisted in geekst.users
         await dbConn.promise().query(
             `UPDATE \`geekst\`.users u
              INNER JOIN \`geekst\`.user_secure_id usi ON usi.user_id = u.user_id
@@ -1045,7 +1116,8 @@ router.post('/create-user', async function (req, res, next) {
                  u.emergency_phone_number = ?,
                  u.medical_condition = ?,
                  u.region_id = COALESCE(?, u.region_id),
-                 u.locality = COALESCE(?, u.locality)
+                 u.locality = COALESCE(?, u.locality),
+                 u.status_id = ?
              WHERE usi.secure_id = ?`,
             [
                 firstName,
@@ -1064,6 +1136,7 @@ router.post('/create-user', async function (req, res, next) {
                 medicalCondition,
                 selectedRegionId,
                 locality,
+                targetStatusId,
                 geekUserId
             ]
         );
@@ -1151,7 +1224,7 @@ router.post('/create-user', async function (req, res, next) {
             [
                 geekUserId,
                 roleId,
-                gs.status_id || 1,
+                targetStatusId,
                 gs.document_type_id || documentTypeId || null,
                 gs.document_id || document || null,
                 gs.blood_type_id || bloodTypeId || null,
@@ -1177,8 +1250,8 @@ router.post('/create-user', async function (req, res, next) {
 
         // Insert role in gym_user_roles
         await dbConn.promise().query(
-            'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, 1)',
-            [gymId, gymUserId, roleId]
+            'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, ?)',
+            [gymId, gymUserId, roleId, targetStatusId]
         );
 
         return res.send({
@@ -1260,10 +1333,63 @@ router.get('/search-by-document', async function (req, res, next) {
         );
 
         if (!rows || rows.length === 0) {
+            // Check if user exists directly in local gimnasio.users
+            let [localGymRows] = await dbConn.promise().query(
+                `SELECT u.* FROM users u
+                 WHERE (u.document_type_id = ? AND TRIM(u.document_id) = ?)
+                    OR TRIM(u.document_id) = ?
+                 LIMIT 1`,
+                [documentTypeId, document, document]
+            );
+
+            if (localGymRows && localGymRows.length > 0) {
+                const gu = localGymRows[0];
+                return res.send({
+                    status: 'success',
+                    statusCode: 1,
+                    exists: true,
+                    existsInGym: true,
+                    existsInCentral: false,
+                    isAlreadyGymMember: true,
+                    message: 'El usuario ya se encuentra registrado en este gimnasio.',
+                    user: {
+                        gymUserId: gu.user_id,
+                        geekUserId: gu.geek_user_id || null,
+                        documentTypeId: gu.document_type_id,
+                        document: gu.document_id,
+                        firstName: gu.first_name,
+                        middleName: gu.middle_name,
+                        lastName: gu.last_name,
+                        secondLastName: gu.second_last_name,
+                        first_name: gu.first_name,
+                        middle_name: gu.middle_name,
+                        last_name: gu.last_name,
+                        second_last_name: gu.second_last_name,
+                        bloodTypeId: gu.blood_type_id || '',
+                        genderId: gu.gender_id || '',
+                        birthday: gu.birthday || '',
+                        email: gu.email || '',
+                        countryPhoneCode: gu.country_phone_code || '+58',
+                        phoneNumber: gu.phone_number || '',
+                        countryEmergencyPhoneCode: gu.country_emergency_phone_code || '+58',
+                        emergencyPhoneNumber: gu.emergency_phone_number || '',
+                        medicalCondition: gu.medical_condition || '',
+                        countryId: 1,
+                        stateId: '',
+                        municipalityId: '',
+                        parishId: '',
+                        gymRoleId: gu.gym_role_id || ''
+                    }
+                });
+            }
+
             return res.send({
                 status: 'not_found',
                 statusCode: 0,
                 exists: false,
+                existsInGym: false,
+                existsInCentral: false,
+                isAlreadyGymMember: false,
                 message: 'No se encontró ningún usuario con el documento ingresado.'
             });
         }
@@ -1403,66 +1529,24 @@ router.get('/search-by-document', async function (req, res, next) {
                 ]
             );
         } else {
-            // Automatically clone user from geekst.users (api-users) into gimnasio.users
-            const [insertGymUser] = await dbConn.promise().query(
-                `INSERT INTO users (
-                    geek_user_id,
-                    gym_role_id,
-                    login_date,
-                    status_id,
-                    document_type_id,
-                    document_id,
-                    blood_type_id,
-                    email,
-                    username,
-                    first_name,
-                    middle_name,
-                    last_name,
-                    second_last_name,
-                    gender_id,
-                    region_id,
-                    locality,
-                    birthday,
-                    avatar,
-                    country_phone_code,
-                    phone_number,
-                    country_emergency_phone_code,
-                    emergency_phone_number,
-                    medical_condition
-                 ) VALUES (?, NULL, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    user.secure_id || null,
-                    user.status_id || 1,
-                    user.document_type_id,
-                    user.document_id,
-                    user.blood_type_id || null,
-                    cleanEmail,
-                    cleanUsername,
-                    firstName,
-                    middleName,
-                    lastName,
-                    secondLastName,
-                    user.gender_id || null,
-                    user.region_id || null,
-                    user.locality || null,
-                    user.birthday || null,
-                    user.avatar || null,
-                    cleanPhoneCode,
-                    cleanPhone,
-                    cleanEmergPhoneCode,
-                    cleanEmergPhone,
-                    cleanMedical
-                ]
-            );
-            gymUserId = insertGymUser.insertId;
+            // User exists in master geekst.users (api-users), but NOT yet in local gimnasio.users
+            isAlreadyGymMember = false;
+            gymUserId = null;
+            const regType = String(req.query.registration || '').trim().toLowerCase();
+            const isPublicReg = (regType === 'client' || regType === 'coach');
+            gymRole = isPublicReg ? (regType === 'coach' ? 3 : 2) : null;
         }
 
         return res.send({
             status: 'success',
             statusCode: 1,
             exists: true,
-            message: 'Usuario encontrado en el sistema.',
+            existsInGym: isAlreadyGymMember,
+            existsInCentral: true,
             isAlreadyGymMember: isAlreadyGymMember,
+            message: isAlreadyGymMember
+                ? 'El usuario ya se encuentra registrado en este gimnasio.'
+                : 'Usuario encontrado en la plataforma general.',
             user: {
                 gymUserId: gymUserId,
                 geekUserId: user.secure_id,
@@ -1500,6 +1584,111 @@ router.get('/search-by-document', async function (req, res, next) {
             status: 'error',
             statusCode: 0,
             message: error.message || 'Error al buscar el usuario'
+        });
+    }
+});
+
+router.get('/list', async function (req, res, next) {
+    try {
+        const langId = req.query.langId || 'esp';
+        const languageId = (langId === 'eng' || langId === 2 || langId === '2') ? 2 : 1;
+        const dbConn = require('../config/database.js');
+
+        const [rows] = await dbConn.promise().query(
+            `SELECT u.user_id,
+                    u.geek_user_id,
+                    u.first_name,
+                    u.middle_name,
+                    u.last_name,
+                    u.second_last_name,
+                    u.email,
+                    u.username,
+                    u.document_type_id,
+                    u.document_id,
+                    u.avatar,
+                    u.status_id,
+                    u.login_date,
+                    COALESCE(u.gym_role_id, (
+                        SELECT gur.role_id
+                        FROM gym_user_roles gur
+                        WHERE gur.user_id = u.user_id AND gur.status_id = 1
+                        ORDER BY gur.gym_user_role_id DESC
+                        LIMIT 1
+                    ), 2) AS resolved_role_id
+             FROM users u
+             ORDER BY u.user_id DESC`
+        );
+
+        const [rolesRows] = await dbConn.promise().query(
+            'SELECT gym_role_id, description FROM gym_roles_lang WHERE language_id = ?',
+            [languageId]
+        );
+        const roleMap = {};
+        for (const r of (rolesRows || [])) {
+            roleMap[Number(r.gym_role_id)] = r.description;
+        }
+
+        const cleanStr = (val) => {
+            if (val === null || val === undefined) return '';
+            const s = String(val).trim();
+            return (s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') ? '' : s;
+        };
+
+        const users = (rows || []).map(row => {
+            const firstName = cleanStr(row.first_name);
+            const middleName = cleanStr(row.middle_name);
+            const lastName = cleanStr(row.last_name);
+            const secondLastName = cleanStr(row.second_last_name);
+            const fullName = [firstName, middleName, lastName, secondLastName].filter(Boolean).join(' ') || cleanStr(row.username) || cleanStr(row.email) || `Usuario #${row.user_id}`;
+
+            const roleId = Number(row.resolved_role_id) || 2;
+            const roleName = roleMap[roleId] || (roleId === 1 ? 'Administrador' : (roleId === 3 ? 'Entrenador' : 'Cliente'));
+            const roleKey = roleId === 3 ? 'trainer' : (roleId === 1 ? 'admin' : 'client');
+
+            const statusId = Number(row.status_id) || 1;
+            const statusKey = statusId === 1 ? 'active' : (statusId === 3 ? 'pending' : 'inactive');
+            const statusLabel = statusId === 1 ? 'Activo' : (statusId === 3 ? 'Pendiente' : 'Inactivo');
+
+            let rawAvatar = cleanStr(row.avatar);
+            if (rawAvatar === 'default-avatar.webp') {
+                rawAvatar = '';
+            }
+
+            return {
+                id: row.user_id,
+                userId: row.user_id,
+                geekUserId: cleanStr(row.geek_user_id),
+                firstName,
+                middleName,
+                lastName,
+                secondLastName,
+                name: fullName,
+                email: cleanStr(row.email),
+                username: cleanStr(row.username),
+                documentTypeId: cleanStr(row.document_type_id),
+                document: cleanStr(row.document_id),
+                roleId,
+                role: roleName,
+                roleKey,
+                statusId,
+                status: statusLabel,
+                statusKey,
+                avatar: rawAvatar || null,
+                loginDate: row.login_date || null
+            };
+        });
+
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            users: users
+        });
+    } catch (error) {
+        console.error('Error listing gym users:', error);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: error.message || 'Error al obtener la lista de usuarios'
         });
     }
 });
