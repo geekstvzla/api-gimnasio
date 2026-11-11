@@ -1118,7 +1118,7 @@ router.post('/create-user', async function (req, res, next) {
                  u.medical_condition = ?,
                  u.region_id = COALESCE(?, u.region_id),
                  u.locality = COALESCE(?, u.locality),
-                 u.status_id = ?
+                 u.status_id = CASE WHEN u.status_id = 1 THEN 1 ELSE ? END
              WHERE usi.secure_id = ?`,
             [
                 firstName,
