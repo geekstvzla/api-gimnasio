@@ -146,6 +146,7 @@ router.get('/get-access-code', async function (req, res, next) {
 
     let email = req.query.email;
     let langId = req.query.langId;
+    let gymSlug = req.query.gymSlug || req.query.slug;
     let params = { email: email, langId: langId };
     const langData = langs(langId);
     var message = "";
@@ -164,7 +165,7 @@ router.get('/get-access-code', async function (req, res, next) {
 
             } else if (statusCode === 1) {
 
-                let emailParams = { accessCode: rs.data.response.accessCode, email: email, langId: langId };
+                let emailParams = { accessCode: rs.data.response.accessCode, email: email, langId: langId, gymSlug: gymSlug };
                 let mailRs = await mail.userAccessCode(emailParams);
 
                 if (mailRs.statusCode === 4) {
@@ -641,7 +642,7 @@ router.post('/sign-up', async function (req, res, next) {
 
                 /*let baseUrl = (process.env.NODE_ENV === 'production') ? process.env.APP_URL+":"+process.env.APP_PORT : process.env.APP_URL;
                 let url = baseUrl+"/activate-user-account?userId="+rs.data.response.userId+"&langId="+langId;*/
-                let emailParams = { activationCode: rs.data.response.activationCode, email: email, langId: langId };
+                let emailParams = { activationCode: rs.data.response.activationCode, email: email, langId: langId, gymSlug: gymSlug };
                 let mailRs = await mail.newUserAccount(emailParams);
 
                 if (mailRs.statusCode === 4) {
@@ -1253,6 +1254,71 @@ router.post('/create-user', async function (req, res, next) {
             'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, ?)',
             [gymId, gymUserId, roleId, targetStatusId]
         );
+
+        // 7. Enviar notificaciones por correo electrónico
+        try {
+            const [gymInfoRows] = await dbConn.promise().query(
+                'SELECT gym_id, name, slug, logo FROM gyms WHERE gym_id = ? LIMIT 1',
+                [gymId]
+            );
+            const currentGym = (gymInfoRows && gymInfoRows.length > 0) ? gymInfoRows[0] : { name: 'Del Valle Fitness', slug: gymSlug };
+            const gymName = currentGym.name;
+            const userFullName = [firstName, middleName, lastName, secondLastName].filter(Boolean).join(' ') || username || 'Nuevo Usuario';
+            const documentFormatted = `${documentTypeId === 1 || documentTypeId === '1' ? 'V-' : (documentTypeId === 2 || documentTypeId === '2' ? 'E-' : '')}${document}`;
+            const fullPhone = phoneNumber ? `${countryPhoneCode} ${phoneNumber}` : '-';
+            const fullEmergencyPhone = emergencyPhoneNumber ? `${countryEmergencyPhoneCode} ${emergencyPhoneNumber}` : '-';
+            const roleDescription = (roleId === 3 || registration === 'coach') ? 'Entrenador' : 'Cliente';
+            const appBaseUrl = (process.env.APP_URL ? (process.env.APP_URL.includes('localhost') ? `${process.env.APP_URL}:${process.env.APP_PORT || 5173}` : process.env.APP_URL) : 'http://localhost:5173');
+
+            // 7.1 Correo al usuario dando las gracias por registrarse
+            if (email) {
+                mail.gymWelcomeUser({
+                    email: email,
+                    userName: userFullName,
+                    userEmail: email,
+                    document: documentFormatted,
+                    userPhone: fullPhone,
+                    roleName: roleDescription,
+                    gymName: gymName,
+                    gymSlug: currentGym.slug || gymSlug,
+                    gymUrl: `${appBaseUrl}/${currentGym.slug || gymSlug}`,
+                    langId: langId
+                }).catch(err => console.error(`Error enviando correo de bienvenida a ${email}:`, err));
+            }
+
+            // 7.2 Correo a los administradores del gimnasio notificando nuevo registro
+            const [adminRows] = await dbConn.promise().query(
+                `SELECT DISTINCT u.email, CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS full_name
+                 FROM gym_user_roles gur
+                 JOIN users u ON u.user_id = gur.user_id
+                 WHERE gur.gym_id = ? AND gur.role_id = 1 AND gur.status_id = 1 AND u.email IS NOT NULL AND u.email <> ''`,
+                [gymId]
+            );
+
+            if (adminRows && adminRows.length > 0) {
+                for (const admin of adminRows) {
+                    if (admin.email) {
+                        mail.gymNewUserAdmin({
+                            email: admin.email,
+                            adminName: admin.full_name.trim() || 'Administrador',
+                            userName: userFullName,
+                            userEmail: email,
+                            document: documentFormatted,
+                            userPhone: fullPhone,
+                            emergencyPhone: fullEmergencyPhone,
+                            roleName: roleDescription,
+                            gymName: gymName,
+                            gymSlug: currentGym.slug || gymSlug,
+                            registrationDate: new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }),
+                            dashboardUrl: `${appBaseUrl}/${currentGym.slug || gymSlug}/dashboard`,
+                            langId: langId
+                        }).catch(err => console.error(`Error enviando correo a administrador ${admin.email}:`, err));
+                    }
+                }
+            }
+        } catch (mailNotificationErr) {
+            console.error('Error enviando correos de notificación de registro:', mailNotificationErr);
+        }
 
         return res.send({
             status: 'success',

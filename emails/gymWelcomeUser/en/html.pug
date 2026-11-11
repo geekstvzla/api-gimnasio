@@ -1,0 +1,42 @@
+extends ../../layout
+
+block content
+    h2(style="color: #1f2937; margin-bottom: 12px;") Welcome#{userName ? ', ' + userName : ''}! 🏋️‍♂️
+    
+    p.message(style="font-size: 16px; color: #374151; line-height: 1.6; margin-bottom: 20px;")
+        | Thank you for registering at #[strong #{gymName || 'our gym'}]. We are thrilled to welcome you to our sports community and look forward to accompanying you on your health and fitness journey.
+
+    div(style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin: 25px 0;")
+        h3(style="color: #111827; font-size: 16px; margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;") Registration Summary
+        table(cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; color: #4b5563; line-height: 2;")
+            if userName
+                tr
+                    td(width="40%" style="font-weight: 600; color: #374151;") Full Name:
+                    td(width="60%")= userName
+            if document
+                tr
+                    td(style="font-weight: 600; color: #374151;") ID Document:
+                    td= document
+            if userEmail
+                tr
+                    td(style="font-weight: 600; color: #374151;") Email:
+                    td= userEmail
+            if userPhone && userPhone !== '-'
+                tr
+                    td(style="font-weight: 600; color: #374151;") Contact Phone:
+                    td= userPhone
+            if roleName
+                tr
+                    td(style="font-weight: 600; color: #374151;") Registration Type:
+                    td= roleName
+
+    p.message(style="font-size: 15px; color: #4b5563; line-height: 1.6; margin-top: 20px;")
+        | Your registration has been processed successfully. You can visit our facilities or log in to our web portal to check your plans, routines, and news.
+
+    if gymUrl
+        div(style="text-align: center; margin: 30px 0 20px 0;")
+            a(href=gymUrl target="_blank" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);") Go to #{gymName || 'Gym'} Portal
+
+    p.info(style="font-size: 13px; color: #6b7280; margin-top: 25px; border-top: 1px solid #f3f4f6; padding-top: 15px;")
+        | If you have any questions or need assistance, feel free to contact the #{gymName || 'our gym'} team. See you soon!
+

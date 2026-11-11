@@ -1,20 +1,38 @@
 let transporter = require('../config/mail.js');
 const Email = require('email-templates');
 const path = require('path');
+const fs = require('fs');
 
-/*const checkEmail = async (params) =>
-{
+const getGymInfoForEmail = async (slugOrId) => {
+    try {
+        const dbConn = require('../config/database.js');
+        let query;
+        let queryParams;
+        if (slugOrId) {
+            query = 'SELECT gym_id, name, slug, logo FROM gyms WHERE slug = ? OR gym_id = ? LIMIT 1;';
+            queryParams = [slugOrId, slugOrId];
+        } else {
+            query = 'SELECT gym_id, name, slug, logo FROM gyms LIMIT 1;';
+            queryParams = [];
+        }
+        const [rows] = await dbConn.promise().query(query, queryParams);
+        if (rows && rows.length > 0) {
+            const gym = rows[0];
+            const logoPath = gym.logo ? path.join(__dirname, '..', 'public', 'images', 'gyms', String(gym.gym_id), gym.logo) : null;
+            return {
+                gymId: gym.gym_id,
+                gymName: gym.name,
+                gymSlug: gym.slug,
+                gymLogoPath: (logoPath && fs.existsSync(logoPath)) ? logoPath : null,
+                gymLogoFilename: gym.logo || null
+            };
+        }
+    } catch (e) {
+        console.error('Error fetching gym info for email:', e);
+    }
+    return null;
+};
 
-    let locale = translation(params.langId);
-    params.from = '"Sumando Kilometros" <contacto@sumandokilometros.com.ve>';
-    params.locals = {};
-    params.template = 'congratsForEnroll/' + locale;
-   
-    let mailRs = await sendEmailTemplate(params);
-    return mailRs;
-
-}
-*/
 const congratsForEnroll = async (params) => {
 
     let locale = translation(params.langId);
@@ -80,9 +98,69 @@ const newUserEnroll = async (params) => {
 
 }
 
+const gymWelcomeUser = async (params) => {
+
+    let locale = translation(params.langId || 1);
+    let gymName = params.gymName || 'Gimnasio';
+    params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+    params.lang = locale;
+    params.locals = {
+        userName: params.userName,
+        userEmail: params.userEmail,
+        document: params.document,
+        userPhone: params.userPhone,
+        roleName: params.roleName || 'Cliente',
+        gymName: gymName,
+        gymUrl: params.gymUrl || ''
+    };
+    params.template = 'gymWelcomeUser/' + locale;
+
+    let mailRs = await sendEmailTemplate(params);
+    return mailRs;
+
+};
+
+const gymNewUserAdmin = async (params) => {
+
+    let locale = translation(params.langId || 1);
+    let gymName = params.gymName || 'Gimnasio';
+    params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+    params.lang = locale;
+    params.locals = {
+        adminName: params.adminName || 'Administrador',
+        userName: params.userName,
+        userEmail: params.userEmail,
+        document: params.document,
+        userPhone: params.userPhone,
+        emergencyPhone: params.emergencyPhone,
+        roleName: params.roleName || 'Cliente',
+        gymName: gymName,
+        registrationDate: params.registrationDate || '',
+        dashboardUrl: params.dashboardUrl || ''
+    };
+    params.template = 'gymNewUserAdmin/' + locale;
+
+    let mailRs = await sendEmailTemplate(params);
+    return mailRs;
+
+};
+
 const sendEmailTemplate = (params) => {
 
     return new Promise(async function (resolve, reject) {
+
+        const gymInfo = await getGymInfoForEmail(params.gymSlug || params.gymId);
+        const gymName = (gymInfo && gymInfo.gymName) ? gymInfo.gymName : (params.gymName || null);
+
+        if (gymName) {
+            params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+        } else if (!params.from) {
+            params.from = '"Sumando Kilometros" <contacto@sumandokilometros.com.ve>';
+        }
+
+        params.gymName = gymName;
+        if (!params.locals) params.locals = {};
+        params.locals.gymName = gymName;
 
         // Asegurar que el logo del encabezado esté siempre adjunto
         let attachments = [];
@@ -92,16 +170,21 @@ const sendEmailTemplate = (params) => {
 
         const hasLogo = attachments.some(att => att.cid === 'logo');
         if (!hasLogo) {
-            attachments.push({
-                filename: 'logo-menu-letras-negras.jpg',
-                path: path.join(
-                    process.cwd(),
-                    'public',
-                    'images',
-                    'logo-menu-letras-negras.jpg'
-                ),
-                cid: 'logo'
-            });
+            let logoPath = (gymInfo && gymInfo.gymLogoPath) ? gymInfo.gymLogoPath : null;
+            let logoFilename = (gymInfo && gymInfo.gymLogoFilename) ? gymInfo.gymLogoFilename : 'logo-menu-letras-negras.jpg';
+
+            if (!logoPath || !fs.existsSync(logoPath)) {
+                logoPath = path.join(__dirname, '..', 'public', 'images', 'logo-menu-letras-negras.jpg');
+                logoFilename = 'logo-menu-letras-negras.jpg';
+            }
+
+            if (fs.existsSync(logoPath)) {
+                attachments.push({
+                    filename: logoFilename,
+                    path: logoPath,
+                    cid: 'logo'
+                });
+            }
         }
 
         const maxRetries = parseInt(process.env.MAIL_RETRIES) || 3;
@@ -123,7 +206,7 @@ const sendEmailTemplate = (params) => {
 
                 await email.send({
                     template: params.template,
-                    locals: params
+                    locals: Object.assign({}, params, params.locals, { gymName: gymName })
                 });
 
                 console.log(`[EMAIL SUCCESS] Correo enviado exitosamente a ${params.email} en el intento ${attempt}/${maxRetries}`);
@@ -192,5 +275,8 @@ module.exports = {
     newUserAccount,
     userAccessCode,
     updateUserData,
-    newUserEnroll
+    newUserEnroll,
+    gymWelcomeUser,
+    gymNewUserAdmin,
+    getGymInfoForEmail
 }
