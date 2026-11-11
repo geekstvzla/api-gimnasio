@@ -4,13 +4,14 @@ require('dotenv').config();
 const transporter = nodemailer.createTransport({
     host: process.env.MAIL_HOST,
     port: process.env.MAIL_PORT,
-    secure: false,
+    secure: (process.env.MAIL_SECURE === "true" || process.env.MAIL_PORT == 465),
     auth: {
         user: process.env.MAIL_USER,
         pass: (process.env.MAIL_PASSWORD === "") ? process.env.MAIL_TOKEN : process.env.MAIL_PASSWORD,
     },
-    /*,
-    token: process.env.MAIL_TOKEN*/
+    connectionTimeout: 10000,
+    greetingTimeout: 5000,
+    socketTimeout: 15000
 });
 
 module.exports = transporter;
