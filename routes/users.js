@@ -600,6 +600,16 @@ router.post('/sign-up', async function (req, res, next) {
                 // Clone newly registered user into gimnasio.users with status_id = 3 (Pendiente) and role (client=2, coach=3)
                 try {
                     const dbConn = require('../config/database.js');
+                    const geekSchema = process.env.DB_USER_GEEK_SCHEMA || 'geekst';
+                    // Indicar origen del usuario en master schema (2 = Gimnasio)
+                    await dbConn.promise().query(
+                        `UPDATE \`${geekSchema}\`.users u
+                         INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
+                         SET u.system_id_referred = 2
+                         WHERE usi.secure_id = ?`,
+                        [userId]
+                    );
+
                     const [gymRows] = await dbConn.promise().query('SELECT gym_id FROM gyms WHERE slug = ? LIMIT 1', [gymSlug]);
                     const gymId = (gymRows && gymRows.length > 0) ? gymRows[0].gym_id : 1;
 
@@ -944,6 +954,7 @@ router.post('/create-user', async function (req, res, next) {
             [documentTypeId, document, document, email]
         );
 
+        const isNewToGeekst = (!existingInGeekst || existingInGeekst.length === 0);
         let geekUserId = '';
         let username = '';
 
@@ -1017,8 +1028,9 @@ router.post('/create-user', async function (req, res, next) {
                         country_emergency_phone_code,
                         emergency_phone_number,
                         medical_condition,
+                        system_id_referred,
                         status_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 1)`,
                     [
                         documentTypeId,
                         document,
@@ -1048,14 +1060,25 @@ router.post('/create-user', async function (req, res, next) {
             }
         }
 
-        // Ensure newly created user is active in master users so initial personal data is persisted
-        await dbConn.promise().query(
-            `UPDATE \`${geekSchema}\`.users u
-             INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
-             SET u.status_id = 1
-             WHERE usi.secure_id = ? AND u.status_id = 3`,
-            [geekUserId]
-        );
+        // Ensure newly created user is active in master users and record originating system (2 = Gimnasio)
+        if (isNewToGeekst) {
+            await dbConn.promise().query(
+                `UPDATE \`${geekSchema}\`.users u
+                 INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
+                 SET u.status_id = 1,
+                     u.system_id_referred = 2
+                 WHERE usi.secure_id = ?`,
+                [geekUserId]
+            );
+        } else {
+            await dbConn.promise().query(
+                `UPDATE \`${geekSchema}\`.users u
+                 INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
+                 SET u.status_id = 1
+                 WHERE usi.secure_id = ? AND u.status_id = 3`,
+                [geekUserId]
+            );
+        }
 
         // 4. Save initial personal data in api-users for the newly created user
         const personalDataParams = {
@@ -1256,6 +1279,96 @@ router.post('/create-user', async function (req, res, next) {
             'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, ?)',
             [gymId, gymUserId, roleId, targetStatusId]
         );
+
+        // 6.1 Guardar foto de perfil (avatar) en api-users si fue enviada
+        let masterUserId = null;
+        if (existingInGeekst && existingInGeekst.length > 0 && existingInGeekst[0].user_id) {
+            masterUserId = existingInGeekst[0].user_id;
+        } else if (typeof newGeekInternalId !== 'undefined' && newGeekInternalId) {
+            masterUserId = newGeekInternalId;
+        } else if (geekUserId) {
+            const [uRows] = await dbConn.promise().query(
+                `SELECT u.user_id FROM \`${geekSchema}\`.users u
+                 INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
+                 WHERE usi.secure_id = ? LIMIT 1`,
+                [geekUserId]
+            );
+            if (uRows && uRows.length > 0) {
+                masterUserId = uRows[0].user_id;
+            }
+        }
+        if (!masterUserId) {
+            masterUserId = gymUserId;
+        }
+
+        if (req.files && (req.files.avatar || req.files.photo || req.files.image)) {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const avatarFile = req.files.avatar || req.files.photo || req.files.image;
+
+                let baseUsersDir = process.env.USERS_UPLOAD_PATH;
+                if (!baseUsersDir || !fs.existsSync(baseUsersDir)) {
+                    const candidates = [
+                        path.resolve(__dirname, '../../api-users/public/images/users'),
+                        path.resolve(__dirname, '../../api-users.geekst.com.ve/public/images/users'),
+                        '/home/sofguarc/api-users.geekst.com.ve/public/images/users',
+                        path.resolve(__dirname, '../public/images/users')
+                    ];
+                    for (const cand of candidates) {
+                        if (fs.existsSync(cand)) {
+                            baseUsersDir = cand;
+                            break;
+                        }
+                    }
+                    if (!baseUsersDir) {
+                        baseUsersDir = candidates[0];
+                    }
+                }
+
+                const userFolder = path.join(baseUsersDir, String(masterUserId));
+                if (!fs.existsSync(userFolder)) {
+                    fs.mkdirSync(userFolder, { recursive: true });
+                }
+
+                let ext = path.extname(avatarFile.name || '').toLowerCase();
+                if (!ext || ext === '.') {
+                    if (avatarFile.mimetype === 'image/webp') ext = '.webp';
+                    else if (avatarFile.mimetype === 'image/png') ext = '.png';
+                    else ext = '.jpg';
+                }
+
+                const avatarFileName = `avatar${ext}`;
+                const targetPath = path.join(userFolder, avatarFileName);
+                await avatarFile.mv(targetPath);
+
+                // Redimensionar del lado del backend si excede 800px de ancho o alto
+                try {
+                    const { Jimp } = require('jimp');
+                    const img = await Jimp.read(targetPath);
+                    if (img && img.bitmap && (img.bitmap.width > 800 || img.bitmap.height > 800)) {
+                        img.scaleToFit({ w: 800, h: 800 });
+                        await img.write(targetPath);
+                    }
+                } catch (jimpErr) {
+                    console.warn('Advertencia en redimensión backend con Jimp (se mantiene archivo original):', jimpErr.message);
+                }
+
+                const avatarRelativePath = `${masterUserId}/${avatarFileName}`;
+
+                // Actualizar avatar en la tabla de usuarios de api-users y en gimnasio.users
+                await dbConn.promise().query(
+                    `UPDATE \`${geekSchema}\`.users SET avatar = ? WHERE user_id = ?`,
+                    [avatarRelativePath, masterUserId]
+                );
+                await dbConn.promise().query(
+                    `UPDATE users SET avatar = ? WHERE user_id = ?`,
+                    [avatarRelativePath, gymUserId]
+                );
+            } catch (avatarErr) {
+                console.error('Error guardando avatar de usuario:', avatarErr);
+            }
+        }
 
         // 7. Enviar notificaciones por correo electrónico
         try {
@@ -1643,6 +1756,8 @@ router.get('/search-by-document', async function (req, res, next) {
                 stateId: regionHierarchy.stateId || '',
                 municipalityId: regionHierarchy.municipalityId || '',
                 parishId: regionHierarchy.parishId || '',
+                avatar: user.avatar || '',
+                avatarUrl: user.avatar ? `${process.env.API_GEEKST || 'https://api-users.geekst.com.ve'}/images/users/${user.avatar}` : '',
                 gymRoleId: gymRole || ''
             }
         });

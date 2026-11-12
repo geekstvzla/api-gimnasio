@@ -1,12 +1,17 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fileUpload = require('express-fileupload');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(fileUpload({
+    createParentPath: true,
+    limits: { fileSize: 15 * 1024 * 1024 }
+}));
 app.use(cors());
 
 const generalRouter = require('./routes/general');
