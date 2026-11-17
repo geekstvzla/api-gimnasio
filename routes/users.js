@@ -49,7 +49,7 @@ router.post('/activate-user-account', async function (req, res, next) {
                 // If registered via invitation link (client or coach), keep status_id = 3 (Pendiente) in gimnasio.users
                 const registrationType = String(req.query.registration || '').trim().toLowerCase();
                 if (registrationType === 'client' || registrationType === 'coach') {
-                    const roleId = registrationType === 'coach' ? 3 : 2;
+                    const roleId = registrationType === 'coach' ? 2 : 3;
                     const dbConn = require('../config/database.js');
                     await dbConn.promise().query(
                         'UPDATE users SET status_id = 3, gym_role_id = COALESCE(gym_role_id, ?) WHERE geek_user_id = ?',
@@ -578,7 +578,7 @@ router.post('/sign-up', async function (req, res, next) {
     let username = req.query.username;
     let registration = String(req.query.registration || 'client').trim().toLowerCase();
     let gymSlug = String(req.query.gymSlug || 'delvallefitness').trim();
-    let roleId = (registration === 'coach') ? 3 : 2;
+    let roleId = (registration === 'coach') ? 2 : 3;
     let params = { email: email, langId: langId, username: username };
     const langData = langs(langId);
     var message = "";
@@ -867,8 +867,8 @@ router.post('/create-user', async function (req, res, next) {
         const registration = String(payload.registration || '').trim().toLowerCase();
         const isPublicRegistration = (registration === 'client' || registration === 'coach');
         const roleId = isPublicRegistration
-            ? (registration === 'coach' ? 3 : 2)
-            : (parseInt(payload.roleId, 10) || 2);
+            ? (registration === 'coach' ? 2 : 3)
+            : (parseInt(payload.roleId, 10) || 3);
         const targetStatusId = isPublicRegistration ? 3 : 1;
         const gymSlug = payload.gymSlug || 'delvallefitness';
 
@@ -1382,7 +1382,7 @@ router.post('/create-user', async function (req, res, next) {
             const documentFormatted = `${documentTypeId === 1 || documentTypeId === '1' ? 'V-' : (documentTypeId === 2 || documentTypeId === '2' ? 'E-' : '')}${document}`;
             const fullPhone = phoneNumber ? `${countryPhoneCode} ${phoneNumber}` : '-';
             const fullEmergencyPhone = emergencyPhoneNumber ? `${countryEmergencyPhoneCode} ${emergencyPhoneNumber}` : '-';
-            const roleDescription = (roleId === 3 || registration === 'coach') ? 'Entrenador' : 'Cliente';
+            const roleDescription = (roleId === 2 || registration === 'coach') ? 'Entrenador' : 'Cliente';
             const appBaseUrl = (process.env.APP_URL ? (process.env.APP_URL.includes('localhost') ? `${process.env.APP_URL}:${process.env.APP_PORT || 5173}` : process.env.APP_URL) : 'http://localhost:5173');
 
             // 7.1 Correo al usuario dando las gracias por registrarse
@@ -1716,7 +1716,7 @@ router.get('/search-by-document', async function (req, res, next) {
             gymUserId = null;
             const regType = String(req.query.registration || '').trim().toLowerCase();
             const isPublicReg = (regType === 'client' || regType === 'coach');
-            gymRole = isPublicReg ? (regType === 'coach' ? 3 : 2) : null;
+            gymRole = isPublicReg ? (regType === 'coach' ? 2 : 3) : null;
         }
 
         return res.send({
@@ -1792,13 +1792,12 @@ router.get('/list', async function (req, res, next) {
                     u.avatar,
                     u.status_id,
                     u.login_date,
-                    COALESCE(u.gym_role_id, (
-                        SELECT gur.role_id
+                    u.gym_role_id,
+                    (
+                        SELECT GROUP_CONCAT(DISTINCT gur.role_id ORDER BY gur.role_id ASC SEPARATOR ',')
                         FROM gym_user_roles gur
-                        WHERE gur.user_id = u.user_id AND gur.status_id = 1
-                        ORDER BY gur.gym_user_role_id DESC
-                        LIMIT 1
-                    ), 2) AS resolved_role_id
+                        WHERE gur.user_id = u.user_id
+                    ) AS assigned_role_ids
              FROM users u
              ORDER BY u.user_id DESC`
         );
@@ -1825,9 +1824,32 @@ router.get('/list', async function (req, res, next) {
             const secondLastName = cleanStr(row.second_last_name);
             const fullName = [firstName, middleName, lastName, secondLastName].filter(Boolean).join(' ') || cleanStr(row.username) || cleanStr(row.email) || `Usuario #${row.user_id}`;
 
-            const roleId = Number(row.resolved_role_id) || 2;
-            const roleName = roleMap[roleId] || (roleId === 1 ? 'Administrador' : (roleId === 3 ? 'Entrenador' : 'Cliente'));
-            const roleKey = roleId === 3 ? 'trainer' : (roleId === 1 ? 'admin' : 'client');
+            let roleIds = [];
+            if (row.assigned_role_ids) {
+                roleIds = String(row.assigned_role_ids)
+                    .split(',')
+                    .map(id => Number(id.trim()))
+                    .filter(id => !isNaN(id) && id > 0);
+            }
+            if (roleIds.length === 0) {
+                const fallbackRoleId = Number(row.gym_role_id) || 3;
+                roleIds = [fallbackRoleId];
+            }
+
+            const roles = roleIds.map(rId => {
+                const rName = roleMap[rId] || (rId === 1 ? 'Administrador' : (rId === 2 ? 'Entrenador' : 'Cliente'));
+                const rKey = rId === 1 ? 'admin' : (rId === 2 ? 'trainer' : 'client');
+                return {
+                    id: rId,
+                    name: rName,
+                    key: rKey
+                };
+            });
+
+            const primaryRole = roles[0] || { id: 3, name: 'Cliente', key: 'client' };
+            const roleId = primaryRole.id;
+            const roleName = roles.map(r => r.name).join(', ');
+            const roleKey = primaryRole.key;
 
             const statusId = Number(row.status_id) || 1;
             const statusKey = statusId === 1 ? 'active' : (statusId === 3 ? 'pending' : 'inactive');
@@ -1854,6 +1876,7 @@ router.get('/list', async function (req, res, next) {
                 roleId,
                 role: roleName,
                 roleKey,
+                roles,
                 statusId,
                 status: statusLabel,
                 statusKey,
