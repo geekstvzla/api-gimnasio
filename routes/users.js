@@ -1777,6 +1777,7 @@ router.get('/list', async function (req, res, next) {
         const langId = req.query.langId || 'esp';
         const languageId = (langId === 'eng' || langId === 2 || langId === '2') ? 2 : 1;
         const dbConn = require('../config/database.js');
+        const geekSchema = process.env.DB_USER_GEEK_SCHEMA || 'geekst';
 
         const [rows] = await dbConn.promise().query(
             `SELECT u.user_id,
@@ -1789,6 +1790,16 @@ router.get('/list', async function (req, res, next) {
                     u.username,
                     u.document_type_id,
                     u.document_id,
+                    u.blood_type_id,
+                    u.gender_id,
+                    u.region_id,
+                    u.locality,
+                    DATE_FORMAT(u.birthday, "%Y-%m-%d") AS birthday,
+                    u.country_phone_code,
+                    u.phone_number,
+                    u.country_emergency_phone_code,
+                    u.emergency_phone_number,
+                    u.medical_condition,
                     u.avatar,
                     u.status_id,
                     u.login_date,
@@ -1810,6 +1821,52 @@ router.get('/list', async function (req, res, next) {
         for (const r of (rolesRows || [])) {
             roleMap[Number(r.gym_role_id)] = r.description;
         }
+
+        const [bloodRows] = await dbConn.promise().query(
+            `SELECT blood_type_id, description FROM \`${geekSchema}\`.blood_type`
+        ).catch(() => [[]]);
+        const bloodMap = {};
+        for (const b of (bloodRows || [])) {
+            bloodMap[Number(b.blood_type_id)] = b.description;
+        }
+
+        const [genderRows] = await dbConn.promise().query(
+            `SELECT gender_type_id, description FROM \`${geekSchema}\`.gender_types_lang WHERE language_id = ?`,
+            [languageId]
+        ).catch(() => [[]]);
+        const genderMap = {};
+        for (const g of (genderRows || [])) {
+            genderMap[Number(g.gender_type_id)] = g.description;
+        }
+
+        const [docTypeRows] = await dbConn.promise().query(
+            `SELECT document_type_id, description FROM \`${geekSchema}\`.document_type_lang WHERE language_id = ?`,
+            [languageId]
+        ).catch(() => [[]]);
+        const docTypeMap = {};
+        for (const d of (docTypeRows || [])) {
+            docTypeMap[Number(d.document_type_id)] = d.description;
+        }
+
+        const [allRegions] = await dbConn.promise().query(
+            `SELECT country_region_id, parent_region_id, description, level FROM \`${geekSchema}\`.country_regions`
+        ).catch(() => [[]]);
+        const regionById = {};
+        for (const reg of (allRegions || [])) {
+            regionById[Number(reg.country_region_id)] = reg;
+        }
+
+        const resolveLocation = (regionId, locality) => {
+            let parts = [];
+            if (locality) parts.push(locality);
+            let curr = Number(regionId);
+            while (curr && regionById[curr]) {
+                const item = regionById[curr];
+                parts.push(item.description);
+                curr = item.parent_region_id ? Number(item.parent_region_id) : null;
+            }
+            return parts.filter(Boolean).join(', ');
+        };
 
         const cleanStr = (val) => {
             if (val === null || val === undefined) return '';
@@ -1859,6 +1916,34 @@ router.get('/list', async function (req, res, next) {
             if (rawAvatar === 'default-avatar.webp') {
                 rawAvatar = '';
             }
+            const avatarUrl = rawAvatar 
+                ? (rawAvatar.startsWith('http') ? rawAvatar : `${process.env.API_GEEKST || 'http://localhost:3001'}/images/users/${rawAvatar}`) 
+                : null;
+
+            const phoneCode = cleanStr(row.country_phone_code);
+            const rawPhone = cleanStr(row.phone_number);
+            const phone = (phoneCode || rawPhone) ? `${phoneCode} ${rawPhone}`.trim() : '';
+
+            const emergPhoneCode = cleanStr(row.country_emergency_phone_code);
+            const rawEmergPhone = cleanStr(row.emergency_phone_number);
+            const emergencyPhone = (emergPhoneCode || rawEmergPhone) ? `${emergPhoneCode} ${rawEmergPhone}`.trim() : '';
+
+            let age = null;
+            if (row.birthday) {
+                const birthDate = new Date(row.birthday);
+                if (!isNaN(birthDate.getTime())) {
+                    const today = new Date();
+                    age = today.getFullYear() - birthDate.getFullYear();
+                    const m = today.getMonth() - birthDate.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                        age--;
+                    }
+                }
+            }
+
+            const location = resolveLocation(row.region_id, cleanStr(row.locality));
+            const docPrefix = row.document_type_id === '2' ? 'P-' : 'V-';
+            const documentFormatted = row.document_id ? `${docPrefix}${cleanStr(row.document_id)}` : '';
 
             return {
                 id: row.user_id,
@@ -1872,7 +1957,25 @@ router.get('/list', async function (req, res, next) {
                 email: cleanStr(row.email),
                 username: cleanStr(row.username),
                 documentTypeId: cleanStr(row.document_type_id),
+                documentType: docTypeMap[Number(row.document_type_id)] || (row.document_type_id === '2' ? 'Pasaporte' : 'Cédula'),
                 document: cleanStr(row.document_id),
+                documentFormatted,
+                genderId: row.gender_id ? Number(row.gender_id) : null,
+                gender: genderMap[Number(row.gender_id)] || (Number(row.gender_id) === 1 ? 'Mujer' : (Number(row.gender_id) === 2 ? 'Hombre' : '')),
+                bloodTypeId: row.blood_type_id ? Number(row.blood_type_id) : null,
+                bloodType: bloodMap[Number(row.blood_type_id)] || '',
+                birthday: row.birthday || null,
+                age,
+                countryPhoneCode: phoneCode,
+                phoneNumber: rawPhone,
+                phone,
+                countryEmergencyPhoneCode: emergPhoneCode,
+                emergencyPhoneNumber: rawEmergPhone,
+                emergencyPhone,
+                medicalCondition: cleanStr(row.medical_condition),
+                locality: cleanStr(row.locality),
+                regionId: row.region_id,
+                location,
                 roleId,
                 role: roleName,
                 roleKey,
@@ -1880,7 +1983,7 @@ router.get('/list', async function (req, res, next) {
                 statusId,
                 status: statusLabel,
                 statusKey,
-                avatar: rawAvatar || null,
+                avatar: avatarUrl,
                 loginDate: row.login_date || null
             };
         });
@@ -1896,6 +1999,166 @@ router.get('/list', async function (req, res, next) {
             status: 'error',
             statusCode: 0,
             message: error.message || 'Error al obtener la lista de usuarios'
+        });
+    }
+});
+
+router.post('/update-status-role', async function (req, res, next) {
+    try {
+        const dbConn = require('../config/database.js');
+        const geekSchema = process.env.DB_USER_GEEK_SCHEMA || 'geekst';
+
+        const payload = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
+        const rawUserId = payload.userId || req.body?.userId || req.query?.userId || payload.id;
+        const userId = Number(rawUserId);
+        if (!userId) {
+            return res.status(400).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'El ID de usuario es requerido'
+            });
+        }
+
+        // Check if user exists
+        const [userRows] = await dbConn.promise().query(
+            'SELECT user_id, geek_user_id, status_id, gym_role_id FROM users WHERE user_id = ?',
+            [userId]
+        );
+        if (!userRows || userRows.length === 0) {
+            return res.status(404).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'Usuario no encontrado'
+            });
+        }
+        const currentUser = userRows[0];
+
+        // 1. Update status if provided
+        const rawStatus = payload.statusId !== undefined ? payload.statusId : (req.body?.statusId !== undefined ? req.body.statusId : req.query?.statusId);
+        let newStatusId = rawStatus !== undefined ? Number(rawStatus) : currentUser.status_id;
+        if (![1, 2, 3].includes(newStatusId)) {
+            newStatusId = currentUser.status_id;
+        }
+
+        await dbConn.promise().query(
+            'UPDATE users SET status_id = ? WHERE user_id = ?',
+            [newStatusId, userId]
+        );
+
+        // Also update status in gym_user_roles
+        await dbConn.promise().query(
+            'UPDATE gym_user_roles SET status_id = ? WHERE user_id = ?',
+            [newStatusId, userId]
+        );
+
+        // If user has geek_user_id, also update status in geekst.users
+        if (currentUser.geek_user_id) {
+            await dbConn.promise().query(
+                `UPDATE \`${geekSchema}\`.users u
+                 INNER JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id
+                 SET u.status_id = ?
+                 WHERE usi.secure_id = ?`,
+                [newStatusId, currentUser.geek_user_id]
+            ).catch(err => console.error('Error syncing status to geekst.users:', err));
+        }
+
+        // 2. Update roles if provided
+        let roleIds = [];
+        const rawRoles = payload.roleIds || req.body?.roleIds || req.query?.roleIds;
+        if (Array.isArray(rawRoles) && rawRoles.length > 0) {
+            roleIds = rawRoles.map(id => Number(id)).filter(id => [1, 2, 3].includes(id));
+        } else if (typeof rawRoles === 'string') {
+            roleIds = rawRoles.split(',').map(id => Number(id.trim())).filter(id => [1, 2, 3].includes(id));
+        } else if (payload.roleId || req.body?.roleId || req.query?.roleId) {
+            const singleId = Number(payload.roleId || req.body?.roleId || req.query?.roleId);
+            if ([1, 2, 3].includes(singleId)) {
+                roleIds = [singleId];
+            }
+        }
+
+        if (roleIds.length > 0) {
+            const gymId = 1;
+
+            // Remove roles no longer assigned
+            await dbConn.promise().query(
+                'DELETE FROM gym_user_roles WHERE user_id = ? AND role_id NOT IN (?)',
+                [userId, roleIds]
+            );
+
+            // Insert new roles if not already existing
+            for (const rId of roleIds) {
+                const [existing] = await dbConn.promise().query(
+                    'SELECT gym_user_role_id FROM gym_user_roles WHERE user_id = ? AND role_id = ?',
+                    [userId, rId]
+                );
+                if (!existing || existing.length === 0) {
+                    await dbConn.promise().query(
+                        'INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, ?, ?)',
+                        [gymId, userId, rId, newStatusId]
+                    );
+                }
+            }
+
+            // Update primary role in users table
+            const primaryRoleId = roleIds[0];
+            await dbConn.promise().query(
+                'UPDATE users SET gym_role_id = ? WHERE user_id = ?',
+                [primaryRoleId, userId]
+            );
+        }
+
+        // 3. Fetch updated roles and descriptions
+        const langId = req.body.langId || 'esp';
+        const languageId = (langId === 'eng' || langId === 2 || langId === '2') ? 2 : 1;
+
+        const [rolesRows] = await dbConn.promise().query(
+            'SELECT gym_role_id, description FROM gym_roles_lang WHERE language_id = ?',
+            [languageId]
+        );
+        const roleMap = {};
+        for (const r of (rolesRows || [])) {
+            roleMap[Number(r.gym_role_id)] = r.description;
+        }
+
+        const [userGurRows] = await dbConn.promise().query(
+            'SELECT DISTINCT role_id FROM gym_user_roles WHERE user_id = ? ORDER BY role_id ASC',
+            [userId]
+        );
+        let finalRoleIds = (userGurRows || []).map(r => Number(r.role_id));
+        if (finalRoleIds.length === 0) {
+            finalRoleIds = [currentUser.gym_role_id || 3];
+        }
+
+        const updatedRoles = finalRoleIds.map(rId => ({
+            id: rId,
+            name: roleMap[rId] || (rId === 1 ? 'Administrador' : (rId === 2 ? 'Entrenador' : 'Cliente')),
+            key: rId === 1 ? 'admin' : (rId === 2 ? 'trainer' : 'client')
+        }));
+
+        const statusLabel = newStatusId === 1 ? 'Activo' : (newStatusId === 3 ? 'Pendiente' : 'Inactivo');
+        const statusKey = newStatusId === 1 ? 'active' : (newStatusId === 3 ? 'pending' : 'inactive');
+
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            message: 'Estado y roles actualizados con éxito',
+            user: {
+                userId,
+                statusId: newStatusId,
+                status: statusLabel,
+                statusKey,
+                roleId: updatedRoles[0]?.id || 3,
+                role: updatedRoles.map(r => r.name).join(', '),
+                roleKey: updatedRoles[0]?.key || 'client',
+                roles: updatedRoles
+            }
+        });
+    } catch (error) {
+        console.error('Error updating gym user status/role:', error);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: error.message || 'Error al actualizar el estado y rol del usuario'
         });
     }
 });
