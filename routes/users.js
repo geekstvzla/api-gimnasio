@@ -1803,6 +1803,8 @@ router.get('/list', async function (req, res, next) {
                     u.avatar,
                     u.status_id,
                     u.login_date,
+                    DATE_FORMAT(u.joined_at, "%Y-%m-%d") AS joined_at,
+                    u.billing_anchor_day,
                     u.gym_role_id,
                     (
                         SELECT GROUP_CONCAT(DISTINCT gur.role_id ORDER BY gur.role_id ASC SEPARATOR ',')
@@ -1984,7 +1986,9 @@ router.get('/list', async function (req, res, next) {
                 status: statusLabel,
                 statusKey,
                 avatar: avatarUrl,
-                loginDate: row.login_date || null
+                loginDate: row.login_date || null,
+                joinedAt: row.joined_at || null,
+                billingAnchorDay: row.billing_anchor_day ? Number(row.billing_anchor_day) : null
             };
         });
 
@@ -2159,6 +2163,55 @@ router.post('/update-status-role', async function (req, res, next) {
             status: 'error',
             statusCode: 0,
             message: error.message || 'Error al actualizar el estado y rol del usuario'
+        });
+    }
+});
+
+router.post('/update-billing-profile', async function (req, res, next) {
+    try {
+        const dbConn = require('../config/database.js').promise();
+        const payload = (req.body && Object.keys(req.body).length > 0) ? req.body : req.query;
+        const userId = Number(payload.userId || payload.user_id || payload.id);
+        const joinedAt = payload.joinedAt || payload.joined_at;
+        const billingAnchorDay = payload.billingAnchorDay !== undefined ? payload.billingAnchorDay : payload.billing_anchor_day;
+
+        if (!userId) {
+            return res.status(400).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'userId es requerido'
+            });
+        }
+
+        const updates = [];
+        const params = [];
+        if (joinedAt) {
+            updates.push('joined_at = ?');
+            params.push(joinedAt);
+        }
+        if (billingAnchorDay !== undefined && billingAnchorDay !== null && billingAnchorDay !== '') {
+            updates.push('billing_anchor_day = ?');
+            params.push(Number(billingAnchorDay));
+        } else if (billingAnchorDay === '' || billingAnchorDay === null) {
+            updates.push('billing_anchor_day = NULL');
+        }
+
+        if (updates.length > 0) {
+            params.push(userId);
+            await dbConn.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = ?`, params);
+        }
+
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            message: 'Fechas de membresía y cobro actualizadas exitosamente'
+        });
+    } catch (error) {
+        console.error('Error updating billing profile:', error);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: error.message || 'Error al actualizar el perfil de membresía'
         });
     }
 });
