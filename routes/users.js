@@ -742,6 +742,41 @@ router.post('/update-user-data', async function (req, res, next) {
 
             } else if (rs.data.response.statusCode === 1) {
 
+                // Actualizar inmediatamente en gimnasio.users localmente
+                try {
+                    const dbConn = require('../config/database.js').promise();
+                    await dbConn.query(
+                        `UPDATE users SET
+                            first_name = COALESCE(?, first_name),
+                            middle_name = ?,
+                            last_name = COALESCE(?, last_name),
+                            second_last_name = ?,
+                            document_type_id = COALESCE(?, document_type_id),
+                            document_id = COALESCE(?, document_id),
+                            birthday = COALESCE(?, birthday),
+                            gender_id = COALESCE(?, gender_id),
+                            blood_type_id = COALESCE(?, blood_type_id),
+                            country_phone_code = COALESCE(?, country_phone_code),
+                            phone_number = COALESCE(?, phone_number),
+                            country_emergency_phone_code = COALESCE(?, country_emergency_phone_code),
+                            emergency_phone_number = COALESCE(?, emergency_phone_number),
+                            medical_condition = COALESCE(?, medical_condition)
+                         WHERE geek_user_id = ? OR user_id = ?`,
+                        [
+                            req.query.firstName, req.query.middleName || null,
+                            req.query.lastName, req.query.secondLastName || null,
+                            req.query.documentTypeId, req.query.document,
+                            req.query.birthday || null, req.query.genderId || null,
+                            req.query.bloodTypeId || null, req.query.countryPhoneCode,
+                            req.query.phoneNumber, req.query.countryEmergencyPhoneCode,
+                            req.query.emergencyPhoneNumber, req.query.medicalCondition || null,
+                            req.query.userId, req.query.userId
+                        ]
+                    );
+                } catch (localUpdateErr) {
+                    console.error('Error actualizando gimnasio.users local:', localUpdateErr);
+                }
+
                 let emailParams = { email: email, langId: langId };
                 let mailRs = await mail.updateUserData(emailParams);
 
