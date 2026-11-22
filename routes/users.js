@@ -1303,70 +1303,24 @@ router.post('/create-user', async function (req, res, next) {
 
         if (req.files && (req.files.avatar || req.files.photo || req.files.image)) {
             try {
-                const fs = require('fs');
-                const path = require('path');
                 const avatarFile = req.files.avatar || req.files.photo || req.files.image;
+                const fd = new FormData();
+                const blob = new Blob([avatarFile.data], { type: avatarFile.mimetype || 'application/octet-stream' });
+                fd.append('avatar', blob, avatarFile.name || 'avatar.jpg');
+                fd.append('userId', geekUserId || masterUserId);
 
-                let baseUsersDir = process.env.USERS_UPLOAD_PATH;
-                if (!baseUsersDir || !fs.existsSync(baseUsersDir)) {
-                    const candidates = [
-                        path.resolve(__dirname, '../../api-users/public/images/users'),
-                        path.resolve(__dirname, '../../api-users.geekst.com.ve/public/images/users'),
-                        '/home/sofguarc/api-users.geekst.com.ve/public/images/users',
-                        path.resolve(__dirname, '../public/images/users')
-                    ];
-                    for (const cand of candidates) {
-                        if (fs.existsSync(cand)) {
-                            baseUsersDir = cand;
-                            break;
-                        }
-                    }
-                    if (!baseUsersDir) {
-                        baseUsersDir = candidates[0];
-                    }
+                const uploadUrl = `${process.env.API_GEEKST || 'http://localhost:3001'}/users/upload-avatar`;
+                const uploadRs = await axios.post(uploadUrl, fd);
+
+                if (uploadRs.data && uploadRs.data.avatar) {
+                    const avatarRelativePath = uploadRs.data.avatar;
+                    await dbConn.promise().query(
+                        `UPDATE users SET avatar = ? WHERE user_id = ?`,
+                        [avatarRelativePath, gymUserId]
+                    );
                 }
-
-                const userFolder = path.join(baseUsersDir, String(masterUserId));
-                if (!fs.existsSync(userFolder)) {
-                    fs.mkdirSync(userFolder, { recursive: true });
-                }
-
-                let ext = path.extname(avatarFile.name || '').toLowerCase();
-                if (!ext || ext === '.') {
-                    if (avatarFile.mimetype === 'image/webp') ext = '.webp';
-                    else if (avatarFile.mimetype === 'image/png') ext = '.png';
-                    else ext = '.jpg';
-                }
-
-                const avatarFileName = `avatar${ext}`;
-                const targetPath = path.join(userFolder, avatarFileName);
-                await avatarFile.mv(targetPath);
-
-                // Redimensionar del lado del backend si excede 800px de ancho o alto
-                try {
-                    const { Jimp } = require('jimp');
-                    const img = await Jimp.read(targetPath);
-                    if (img && img.bitmap && (img.bitmap.width > 800 || img.bitmap.height > 800)) {
-                        img.scaleToFit({ w: 800, h: 800 });
-                        await img.write(targetPath);
-                    }
-                } catch (jimpErr) {
-                    console.warn('Advertencia en redimensión backend con Jimp (se mantiene archivo original):', jimpErr.message);
-                }
-
-                const avatarRelativePath = `${masterUserId}/${avatarFileName}`;
-
-                // Actualizar avatar en la tabla de usuarios de api-users y en gimnasio.users
-                await dbConn.promise().query(
-                    `UPDATE \`${geekSchema}\`.users SET avatar = ? WHERE user_id = ?`,
-                    [avatarRelativePath, masterUserId]
-                );
-                await dbConn.promise().query(
-                    `UPDATE users SET avatar = ? WHERE user_id = ?`,
-                    [avatarRelativePath, gymUserId]
-                );
             } catch (avatarErr) {
-                console.error('Error guardando avatar de usuario:', avatarErr);
+                console.error('Error enviando avatar a api-users desde api-gimnasio:', avatarErr.response?.data || avatarErr.message);
             }
         }
 
@@ -1800,7 +1754,7 @@ router.get('/list', async function (req, res, next) {
                     u.country_emergency_phone_code,
                     u.emergency_phone_number,
                     u.medical_condition,
-                    u.avatar,
+                    COALESCE(NULLIF(u.avatar, ''), NULLIF(u.avatar, 'default-avatar.webp'), gu.avatar) AS avatar,
                     u.status_id,
                     u.login_date,
                     DATE_FORMAT(u.joined_at, "%Y-%m-%d") AS joined_at,
@@ -1812,6 +1766,8 @@ router.get('/list', async function (req, res, next) {
                         WHERE gur.user_id = u.user_id
                     ) AS assigned_role_ids
              FROM users u
+             LEFT JOIN \`${geekSchema}\`.user_secure_id usi ON usi.secure_id = u.geek_user_id
+             LEFT JOIN \`${geekSchema}\`.users gu ON gu.user_id = usi.user_id
              ORDER BY u.user_id DESC`
         );
 
@@ -2213,6 +2169,74 @@ router.post('/update-billing-profile', async function (req, res, next) {
             statusCode: 0,
             message: error.message || 'Error al actualizar el perfil de membresía'
         });
+    }
+});
+
+/**
+ * Webhook de sincronización recibido desde api-users
+ * Actualiza los datos del usuario localmente en gimnasio.users
+ */
+router.post('/sync-profile', async function (req, res, next) {
+    try {
+        const expectedSecret = process.env.WEBHOOK_SECRET || 'Clickear.2026';
+        const incomingSecret = req.headers['x-webhook-secret'];
+        if (expectedSecret && incomingSecret && incomingSecret !== expectedSecret) {
+            return res.status(403).send({ status: 'error', message: 'Firma o secreto inválido' });
+        }
+
+        const { geekUserId, data } = req.body;
+        if (!geekUserId || !data) {
+            return res.status(400).send({ status: 'error', message: 'Payload de sincronización incompleto' });
+        }
+
+        const dbConn = require('../config/database.js').promise();
+
+        // 1. Verificar si el usuario existe en gimnasio.users por geek_user_id o por email
+        const [existing] = await dbConn.query(
+            `SELECT user_id FROM users WHERE geek_user_id = ? OR (email IS NOT NULL AND LOWER(TRIM(email)) = ?) LIMIT 1`,
+            [geekUserId, (data.email || '').toLowerCase().trim()]
+        );
+
+        if (existing && existing.length > 0) {
+            const localUserId = existing[0].user_id;
+
+            const fields = [];
+            const values = [];
+
+            if (data.first_name !== undefined) { fields.push('first_name = ?'); values.push(data.first_name); }
+            if (data.middle_name !== undefined) { fields.push('middle_name = ?'); values.push(data.middle_name); }
+            if (data.last_name !== undefined) { fields.push('last_name = ?'); values.push(data.last_name); }
+            if (data.second_last_name !== undefined) { fields.push('second_last_name = ?'); values.push(data.second_last_name); }
+            if (data.email) { fields.push('email = ?'); values.push(data.email); }
+            if (data.document_type_id !== undefined) { fields.push('document_type_id = ?'); values.push(data.document_type_id); }
+            if (data.document_id !== undefined) { fields.push('document_id = ?'); values.push(data.document_id); }
+            if (data.birthday) { fields.push('birthday = ?'); values.push(data.birthday); }
+            if (data.gender_id !== undefined) { fields.push('gender_id = ?'); values.push(data.gender_id); }
+            if (data.blood_type_id !== undefined) { fields.push('blood_type_id = ?'); values.push(data.blood_type_id); }
+            if (data.country_phone_code !== undefined) { fields.push('country_phone_code = ?'); values.push(data.country_phone_code); }
+            if (data.phone_number !== undefined) { fields.push('phone_number = ?'); values.push(data.phone_number); }
+            if (data.country_emergency_phone_code !== undefined) { fields.push('country_emergency_phone_code = ?'); values.push(data.country_emergency_phone_code); }
+            if (data.emergency_phone_number !== undefined) { fields.push('emergency_phone_number = ?'); values.push(data.emergency_phone_number); }
+            if (data.medical_condition !== undefined) { fields.push('medical_condition = ?'); values.push(data.medical_condition); }
+            if (data.region_id !== undefined) { fields.push('region_id = ?'); values.push(data.region_id); }
+            if (data.locality !== undefined) { fields.push('locality = ?'); values.push(data.locality); }
+            if (data.avatar) { fields.push('avatar = ?'); values.push(data.avatar); }
+            if (geekUserId) { fields.push('geek_user_id = ?'); values.push(geekUserId); }
+
+            if (fields.length > 0) {
+                values.push(localUserId);
+                await dbConn.query(`UPDATE users SET ${fields.join(', ')} WHERE user_id = ?`, values);
+            }
+
+            console.log(`[WEBHOOK SYNC GIMNASIO] Usuario actualizado localmente: user_id ${localUserId} (${geekUserId})`);
+            return res.send({ status: 'success', message: 'Usuario sincronizado exitosamente en gimnasio' });
+        } else {
+            console.log(`[WEBHOOK SYNC GIMNASIO] Usuario ${geekUserId} no pertenece a este gimnasio (ignorado).`);
+            return res.send({ status: 'ignored', message: 'Usuario no registrado en este gimnasio' });
+        }
+    } catch (error) {
+        console.error('[WEBHOOK SYNC GIMNASIO ERROR]:', error);
+        return res.status(500).send({ status: 'error', message: error.message });
     }
 });
 
