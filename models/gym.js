@@ -13,7 +13,7 @@ const gymInfo = (slug) => {
         db.query(queryString, [slug], function (err, result) {
 
             if (err) {
-
+                console.error("Error executing gymInfo query:", err);
                 reject({
                     response: {
                         message: "Error al tratar de ejecutar la consulta en la linea 13",

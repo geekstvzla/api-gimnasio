@@ -480,6 +480,266 @@ router.get('/get-user-data', async function (req, res, next) {
 
 });
 
+router.post('/google-sign-in', async function (req, res, next) {
+    try {
+        const credential = req.body?.credential || req.query?.credential;
+        const code = req.body?.code || req.query?.code;
+        let langId = req.body?.langId || req.query?.langId || 'esp';
+        const gymSlug = req.body?.gymSlug || req.query?.gymSlug || '';
+        const langData = langs(langId);
+
+        if (!credential && !code) {
+            return res.send({
+                message: 'No se recibió la credencial de autenticación de Google',
+                status: 'error',
+                statusCode: 0
+            });
+        }
+
+        let googlePayload = null;
+        if (credential) {
+            try {
+                const verifyRes = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+                googlePayload = verifyRes.data;
+            } catch (err) {
+                console.error('Error validando token de Google:', err.response?.data || err.message);
+                return res.send({
+                    message: 'Credencial de Google inválida o expirada',
+                    status: 'error',
+                    statusCode: 0
+                });
+            }
+        } else if (code) {
+            try {
+                const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
+                    code: code,
+                    client_id: process.env.GOOGLE_CLIENT_ID,
+                    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                    redirect_uri: 'postmessage',
+                    grant_type: 'authorization_code'
+                });
+                const idToken = tokenRes.data.id_token;
+                const verifyRes = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+                googlePayload = verifyRes.data;
+            } catch (err) {
+                console.error('Error intercambiando código de Google:', err.response?.data || err.message);
+                return res.send({
+                    message: 'Error al verificar autorización de Google',
+                    status: 'error',
+                    statusCode: 0
+                });
+            }
+        }
+
+        if (!googlePayload || !googlePayload.email) {
+            return res.send({
+                message: 'No se pudo obtener información del perfil de Google',
+                status: 'error',
+                statusCode: 0
+            });
+        }
+
+        const email = googlePayload.email.toLowerCase().trim();
+        const firstName = googlePayload.given_name || (googlePayload.name ? googlePayload.name.split(' ')[0] : 'Usuario');
+        const lastName = googlePayload.family_name || (googlePayload.name && googlePayload.name.includes(' ') ? googlePayload.name.split(' ').slice(1).join(' ') : '');
+        const googlePicture = googlePayload.picture || null;
+
+        const dbConn = require('../config/database.js');
+        const geekSchema = process.env.DB_USER_GEEK_SCHEMA || 'geekst';
+
+        // 1. Verificar si el usuario ya existe en geekst.users
+        const [userRows] = await dbConn.promise().query(
+            `SELECT u.user_id, u.document_id, u.username, u.first_name, u.avatar, u.status_id, usi.secure_id 
+             FROM \`${geekSchema}\`.users u 
+             LEFT JOIN \`${geekSchema}\`.user_secure_id usi ON usi.user_id = u.user_id 
+             WHERE LOWER(u.email) = ? LIMIT 1`,
+            [email]
+        );
+
+        let secureId = null;
+        let userData = null;
+
+        if (userRows && userRows.length > 0) {
+            const existingUser = userRows[0];
+
+            if (existingUser.status_id === 2) {
+                return res.send({
+                    message: langData.accessCode?.warning?.userInactive || 'Su cuenta está en estado INACTIVO.',
+                    status: 'warning',
+                    statusCode: 5
+                });
+            }
+
+            secureId = existingUser.secure_id;
+            if (!secureId) {
+                const [uuidRes] = await dbConn.promise().query(`SELECT UUID() as uuid`);
+                secureId = uuidRes[0].uuid;
+                await dbConn.promise().query(
+                    `INSERT INTO \`${geekSchema}\`.user_secure_id (user_id, secure_id) VALUES (?, ?)`,
+                    [existingUser.user_id, secureId]
+                );
+            }
+
+            let currentStatus = existingUser.status_id;
+            if (currentStatus === 3) {
+                await dbConn.promise().query(
+                    `UPDATE \`${geekSchema}\`.users SET status_id = 1 WHERE user_id = ?`,
+                    [existingUser.user_id]
+                );
+                currentStatus = 1;
+            }
+
+            let userAvatar = existingUser.avatar;
+            if ((!userAvatar || userAvatar === 'default-avatar.webp' || userAvatar === '') && googlePicture) {
+                await dbConn.promise().query(
+                    `UPDATE \`${geekSchema}\`.users SET avatar = ? WHERE user_id = ?`,
+                    [googlePicture, existingUser.user_id]
+                );
+                userAvatar = googlePicture;
+            }
+
+            await usersModel.signIn([secureId, langId]);
+
+            userData = {
+                avatar: userAvatar || googlePicture || 'default-avatar.webp',
+                documentId: existingUser.document_id || '',
+                email: email,
+                id: secureId,
+                name: existingUser.first_name || existingUser.username,
+                username: existingUser.username,
+                userStatusId: currentStatus
+            };
+
+        } else {
+            // 2. Nuevo usuario -> auto-registro en geekst
+            let baseUsername = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().substring(0, 18);
+            if (!baseUsername || baseUsername.length < 3) baseUsername = 'user';
+            let finalUsername = baseUsername;
+            let counter = 1;
+
+            while (true) {
+                const [existing] = await dbConn.promise().query(
+                    `SELECT user_id FROM \`${geekSchema}\`.users WHERE username = ? LIMIT 1`,
+                    [finalUsername]
+                );
+                if (existing.length === 0) break;
+                finalUsername = `${baseUsername.substring(0, 14)}${Math.floor(100 + Math.random() * 900)}`;
+                counter++;
+                if (counter > 10) {
+                    finalUsername = `${baseUsername.substring(0, 10)}${Date.now().toString().slice(-6)}`;
+                    break;
+                }
+            }
+
+            const [insertRes] = await dbConn.promise().query(
+                `INSERT INTO \`${geekSchema}\`.users 
+                 (email, username, first_name, last_name, avatar, system_id_referred, status_id) 
+                 VALUES (?, ?, ?, ?, ?, 2, 1)`,
+                [email, finalUsername, firstName, lastName, googlePicture || 'default-avatar.webp']
+            );
+            const newUserId = insertRes.insertId;
+
+            const [uuidRes] = await dbConn.promise().query(`SELECT UUID() as uuid`);
+            secureId = uuidRes[0].uuid;
+
+            await dbConn.promise().query(
+                `INSERT INTO \`${geekSchema}\`.user_secure_id (user_id, secure_id) VALUES (?, ?)`,
+                [newUserId, secureId]
+            );
+
+            await usersModel.signIn([secureId, langId]);
+
+            userData = {
+                avatar: googlePicture || 'default-avatar.webp',
+                documentId: '',
+                email: email,
+                id: secureId,
+                name: firstName || finalUsername,
+                username: finalUsername,
+                userStatusId: 1
+            };
+        }
+
+        // 3. Sincronizar / registrar en gimnasio.users
+        try {
+            const [gymUserRows] = await dbConn.promise().query(
+                `SELECT user_id FROM users WHERE geek_user_id = ? OR (email IS NOT NULL AND LOWER(TRIM(email)) = ?) LIMIT 1`,
+                [secureId, email]
+            );
+
+            let localUserId = null;
+            if (gymUserRows && gymUserRows.length > 0) {
+                localUserId = gymUserRows[0].user_id;
+                await dbConn.promise().query(
+                    `UPDATE users SET 
+                        geek_user_id = ?, 
+                        login_date = NOW(),
+                        avatar = COALESCE(NULLIF(avatar, ''), ?) 
+                     WHERE user_id = ?`,
+                    [secureId, googlePicture || 'default-avatar.webp', localUserId]
+                );
+            } else {
+                const [insertGymUserRes] = await dbConn.promise().query(
+                    `INSERT INTO users (
+                        geek_user_id,
+                        first_name,
+                        last_name,
+                        email,
+                        username,
+                        avatar,
+                        status_id,
+                        login_date
+                     ) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())`,
+                    [
+                        secureId,
+                        firstName,
+                        lastName,
+                        email,
+                        userData.username,
+                        googlePicture || 'default-avatar.webp'
+                    ]
+                );
+                localUserId = insertGymUserRes.insertId;
+
+                let targetGymId = 1;
+                if (gymSlug) {
+                    const [targetGym] = await dbConn.promise().query(
+                        `SELECT gym_id FROM gyms WHERE slug = ? LIMIT 1`,
+                        [gymSlug]
+                    );
+                    if (targetGym && targetGym.length > 0) {
+                        targetGymId = targetGym[0].gym_id;
+                    }
+                }
+
+                if (localUserId && targetGymId) {
+                    await dbConn.promise().query(
+                        `INSERT INTO gym_user_roles (gym_id, user_id, role_id, status_id) VALUES (?, ?, 2, 1)`,
+                        [targetGymId, localUserId]
+                    );
+                }
+            }
+        } catch (gymSyncErr) {
+            console.error('Error sincronizando usuario de Google en gimnasio.users:', gymSyncErr);
+        }
+
+        return res.send({
+            message: langData.signIn?.success || 'Bienvenid@, pronto será redireccionad@',
+            status: 'success',
+            statusCode: 1,
+            userData: userData
+        });
+
+    } catch (err) {
+        console.error('Error in /google-sign-in:', err);
+        return res.send({
+            message: 'Error interno del servidor al autenticar con Google',
+            status: 'error',
+            statusCode: 0
+        });
+    }
+});
+
 router.post('/sign-in', async function (req, res, next) {
 
     const email = req.query.email;
