@@ -480,6 +480,102 @@ router.get('/get-user-data', async function (req, res, next) {
 
 });
 
+async function getUserGyms(dbConn, geekUserId, email, langId = 'esp') {
+    try {
+        const langNum = (langId === 'eng' || langId === 'en') ? 2 : 1;
+        const apiPublic = process.env.API_PUBLIC || 'http://localhost:3002';
+
+        const [rows] = await dbConn.promise().query(
+            `SELECT DISTINCT 
+                g.gym_id AS gymId, 
+                g.name, 
+                g.slug, 
+                IF(g.logo IS NOT NULL AND g.logo != '', 
+                   CONCAT('${apiPublic}/images/gyms/', g.gym_id, '/', g.logo), 
+                   NULL
+                ) AS logo,
+                gur.role_id AS roleId,
+                COALESCE(grl.description, 'Miembro') AS roleName,
+                gur.status_id AS statusId
+             FROM gyms g
+             INNER JOIN gym_user_roles gur ON gur.gym_id = g.gym_id
+             INNER JOIN users u ON u.user_id = gur.user_id
+             LEFT JOIN gym_roles_lang grl ON grl.gym_role_id = gur.role_id AND grl.language_id = ?
+             WHERE (u.geek_user_id = ? OR (u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM(?))))
+               AND gur.status_id = 1
+             ORDER BY gur.role_id ASC, g.name ASC`,
+            [langNum, geekUserId || '', email || '']
+        );
+
+        let finalRows = rows;
+        if (!finalRows || finalRows.length === 0) {
+            const [fallbackRows] = await dbConn.promise().query(
+                `SELECT DISTINCT 
+                    g.gym_id AS gymId, 
+                    g.name, 
+                    g.slug, 
+                    IF(g.logo IS NOT NULL AND g.logo != '', 
+                       CONCAT('${apiPublic}/images/gyms/', g.gym_id, '/', g.logo), 
+                       NULL
+                    ) AS logo,
+                    gur.role_id AS roleId,
+                    COALESCE(grl.description, 'Miembro') AS roleName,
+                    gur.status_id AS statusId
+                 FROM gyms g
+                 INNER JOIN gym_user_roles gur ON gur.gym_id = g.gym_id
+                 INNER JOIN users u ON u.user_id = gur.user_id
+                 LEFT JOIN gym_roles_lang grl ON grl.gym_role_id = gur.role_id AND grl.language_id = ?
+                 WHERE (u.geek_user_id = ? OR (u.email IS NOT NULL AND LOWER(TRIM(u.email)) = LOWER(TRIM(?))))
+                 ORDER BY gur.role_id ASC, g.name ASC`,
+                [langNum, geekUserId || '', email || '']
+            );
+            finalRows = fallbackRows;
+        }
+
+        const gymsMap = new Map();
+        for (const r of (finalRows || [])) {
+            if (!gymsMap.has(r.gymId)) {
+                gymsMap.set(r.gymId, {
+                    gymId: r.gymId,
+                    name: r.name,
+                    slug: r.slug,
+                    logo: r.logo,
+                    roleId: r.roleId,
+                    roleName: r.roleName,
+                    statusId: r.statusId
+                });
+            }
+        }
+        return Array.from(gymsMap.values());
+    } catch (err) {
+        console.error('Error in getUserGyms:', err);
+        return [];
+    }
+}
+
+router.get('/my-gyms', async function (req, res, next) {
+    try {
+        const userId = req.query.userId;
+        const email = req.query.email;
+        const langId = req.query.langId || 'esp';
+        const dbConn = require('../config/database.js');
+        const gyms = await getUserGyms(dbConn, userId, email, langId);
+        return res.send({
+            status: 'success',
+            statusCode: 1,
+            gyms: gyms
+        });
+    } catch (err) {
+        console.error('Error in /my-gyms:', err);
+        return res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: 'Error al consultar gimnasios del usuario',
+            gyms: []
+        });
+    }
+});
+
 router.post('/google-sign-in', async function (req, res, next) {
     try {
         const credential = req.body?.credential || req.query?.credential;
@@ -723,6 +819,8 @@ router.post('/google-sign-in', async function (req, res, next) {
             console.error('Error sincronizando usuario de Google en gimnasio.users:', gymSyncErr);
         }
 
+        userData.gyms = await getUserGyms(dbConn, userData.id, userData.email, langId);
+
         return res.send({
             message: langData.signIn?.success || 'Bienvenid@, pronto será redireccionad@',
             status: 'success',
@@ -771,6 +869,9 @@ router.post('/sign-in', async function (req, res, next) {
                     username: rs.data.response.username,
                     userStatusId: rs.data.userStatusId
                 };
+
+                const dbConn = require('../config/database.js');
+                userData.gyms = await getUserGyms(dbConn, userData.id, userData.email, langId);
 
                 res.send({
                     message: message,

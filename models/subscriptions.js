@@ -89,6 +89,8 @@ const getUserSubscriptionStatus = async (userId, gymId = 1) => {
                 us.user_id,
                 us.gym_id,
                 us.gym_sub_plan_id,
+                us.payment_method_id,
+                pml.description AS payment_method,
                 gsp.name AS plan_name,
                 gsp.billing_period_id,
                 gsp.weekly_attendance_limit,
@@ -102,6 +104,7 @@ const getUserSubscriptionStatus = async (userId, gymId = 1) => {
                 DATEDIFF(us.end_date, CURDATE()) AS days_remaining
          FROM user_subscriptions us
          INNER JOIN gym_sub_plans gsp ON gsp.gym_sub_plan_id = us.gym_sub_plan_id
+         LEFT JOIN payment_methods_lang pml ON pml.payment_method_id = us.payment_method_id AND pml.language_id = 1
          WHERE us.user_id = ? AND us.gym_id = ? AND us.status IN ('active', 'scheduled')
          ORDER BY us.end_date DESC
          LIMIT 1`,
@@ -191,7 +194,8 @@ const subscribeUser = async ({
     pricePaid,
     billingAnchorDay = null,
     joinedAt = null,
-    notes = null
+    notes = null,
+    paymentMethodId = null
 }) => {
     // 1. Obtener detalles del plan
     const [plans] = await db.query(
@@ -245,9 +249,9 @@ const subscribeUser = async ({
     // 3. Insertar suscripción
     const [insResult] = await db.query(
         `INSERT INTO user_subscriptions 
-         (user_id, gym_id, gym_sub_plan_id, payment_date, start_date, end_date, price_paid, status, notes)
-         VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
-        [userId, gymId, gymSubPlanId, startDateStr, endDateStr, actualPrice, status, notes]
+         (user_id, gym_id, gym_sub_plan_id, payment_method_id, payment_date, start_date, end_date, price_paid, status, notes)
+         VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+        [userId, gymId, gymSubPlanId, paymentMethodId ? Number(paymentMethodId) : null, startDateStr, endDateStr, actualPrice, status, notes]
     );
 
     // 4. Actualizar billing_anchor_day y/o joined_at en el perfil de usuario si fueron provistos
@@ -429,6 +433,8 @@ const getUserSubscriptionHistory = async (userId, gymId = 1) => {
                 us.user_id,
                 us.gym_id,
                 us.gym_sub_plan_id,
+                us.payment_method_id,
+                pml.description AS payment_method,
                 gsp.name AS plan_name,
                 gsp.weekly_attendance_limit,
                 gsp.duration_days,
@@ -440,9 +446,23 @@ const getUserSubscriptionHistory = async (userId, gymId = 1) => {
                 us.notes
          FROM user_subscriptions us
          INNER JOIN gym_sub_plans gsp ON gsp.gym_sub_plan_id = us.gym_sub_plan_id
+         LEFT JOIN payment_methods_lang pml ON pml.payment_method_id = us.payment_method_id AND pml.language_id = 1
          WHERE us.user_id = ? AND us.gym_id = ?
          ORDER BY us.user_subscription_id DESC`,
         [userId, gymId]
+    );
+    return rows;
+};
+
+const getPaymentMethods = async (langId = 1) => {
+    const [rows] = await db.query(
+        `SELECT pm.payment_method_id,
+                pml.description AS payment_method
+         FROM payment_methods pm
+         INNER JOIN payment_methods_lang pml ON pml.payment_method_id = pm.payment_method_id
+         WHERE pml.language_id = ? AND pm.status_id = 1
+         ORDER BY pm.payment_method_id ASC`,
+        [Number(langId) || 1]
     );
     return rows;
 };
@@ -454,5 +474,6 @@ module.exports = {
     subscribeUser,
     validateAndCheckin,
     getUserAttendances,
-    getUserSubscriptionHistory
+    getUserSubscriptionHistory,
+    getPaymentMethods
 };

@@ -116,6 +116,28 @@ router.get('/subscriptions/history', async function (req, res, next) {
 });
 
 /**
+ * GET /gym/payment-methods
+ * Lista de métodos de pago activos
+ */
+router.get('/payment-methods', async function (req, res, next) {
+    try {
+        const langId = req.query.langId || req.query.language_id || 1;
+        const methods = await subsModel.getPaymentMethods(langId);
+        res.send({
+            status: 'success',
+            statusCode: 1,
+            paymentMethods: methods
+        });
+    } catch (err) {
+        res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: err.message
+        });
+    }
+});
+
+/**
  * POST /gym/subscriptions/subscribe
  * Asignar o renovar suscripción (soporta renovación anticipada)
  */
@@ -129,6 +151,7 @@ router.post('/subscriptions/subscribe', async function (req, res, next) {
         const billingAnchorDay = payload.billingAnchorDay !== undefined ? payload.billingAnchorDay : payload.billing_anchor_day;
         const joinedAt = payload.joinedAt || payload.joined_at;
         const notes = payload.notes || null;
+        const paymentMethodId = payload.paymentMethodId || payload.payment_method_id || null;
 
         if (!userId || !gymSubPlanId) {
             return res.status(400).send({
@@ -145,7 +168,8 @@ router.post('/subscriptions/subscribe', async function (req, res, next) {
             pricePaid,
             billingAnchorDay,
             joinedAt,
-            notes
+            notes,
+            paymentMethodId
         });
 
         res.send({
