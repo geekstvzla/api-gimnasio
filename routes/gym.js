@@ -256,4 +256,45 @@ router.get('/access/attendances', async function (req, res, next) {
     }
 });
 
+/**
+ * ALL /gym/cron/birthday-emails
+ * Endpoint para disparar el proceso de cumpleaños vía Webhook / Cron HTTP
+ */
+const { runBirthdayEmails } = require('../scripts/send-birthday-emails.js');
+
+router.all('/cron/birthday-emails', async function (req, res, next) {
+    try {
+        const payload = Object.assign({}, req.query, req.body);
+        const cronSecret = process.env.CRON_SECRET;
+        if (cronSecret && payload.secret !== cronSecret) {
+            return res.status(403).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'No autorizado para ejecutar esta tarea'
+            });
+        }
+
+        const summary = await runBirthdayEmails({
+            dryRun: payload.dryRun === 'true' || payload.dryRun === true,
+            force: payload.force === 'true' || payload.force === true,
+            targetDate: payload.date || payload.targetDate || null,
+            gymId: payload.gymId || payload.gym_id || null,
+            testEmail: payload.testEmail || payload.test_email || null,
+            skipAdminReport: payload.skipAdminReport === 'true' || payload.skipAdminReport === true
+        });
+
+        res.send({
+            status: 'success',
+            statusCode: 1,
+            summary
+        });
+    } catch (err) {
+        res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: err.message || 'Error al procesar correos de cumpleaños'
+        });
+    }
+});
+
 module.exports = router;

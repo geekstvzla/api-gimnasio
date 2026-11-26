@@ -1,0 +1,55 @@
+extends ../../layout
+
+block head_styles
+    style
+        include ../../../assets/css/emails/birthdayAdminReport.css
+
+block subtitle
+    p.subtitle Reporte diario de cumpleañeros para atención personalizada.
+
+block content
+    div(style="text-align: center;")
+        span.report-badge 📅 Reporte Diario
+
+    h2.report-title Cumpleañeros de Hoy
+    p.report-subtitle Atletas de #[strong #{gymName}] que celebran su cumpleaños hoy #{todayDate}.
+
+    div.report-hero-box
+        div.report-count-number #{celebrantsCount}
+        div.report-count-label Atleta(s) cumpleañero(s) hoy
+
+    p(style="color: #475569; font-size: 14px; margin-bottom: 12px;")
+        | Te enviamos este listado para que puedas felicitarlos personalmente en recepción, enviarles un mensaje especial o brindarles una atención destacada en su día:
+
+    table.celebrants-table
+        thead
+            tr
+                th Atleta
+                th Teléfono
+                th Correo
+                th Membresía
+        tbody
+            each c in celebrants
+                tr
+                    td
+                        span.celebrant-name #{c.full_name}
+                        if c.age
+                            br
+                            small(style="color: #64748B;") Cumple #{c.age} años
+                    td
+                        if c.phone_formatted
+                            a.celebrant-phone(href="https://wa.me/" + c.whatsapp_clean target="_blank") #{c.phone_formatted}
+                        else
+                            span(style="color: #94A3B8;") Sin teléfono
+                    td
+                        span(style="color: #334155; font-size: 12px;") #{c.email}
+                    td
+                        if c.has_active_subscription
+                            span.status-badge.status-active Activo
+                        else
+                            span.status-badge.status-inactive Inactivo
+
+    if dashboardUrl
+        div(style="text-align: center; margin: 25px 0 10px 0;")
+            a.btn-dashboard(href=dashboardUrl target="_blank")
+                | Ir al Dashboard de #{gymName}

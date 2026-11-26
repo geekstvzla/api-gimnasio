@@ -1,0 +1,37 @@
+extends ../../layout
+
+block head_styles
+    style
+        include ../../../assets/css/emails/birthdayClient.css
+
+block subtitle
+    p.subtitle Celebrando tu día con energía, salud y superación.
+
+block content
+    div(style="text-align: center;")
+        span.birthday-badge 🎉 ¡Hoy celebramos tu día! 🎂
+
+    h2.birthday-title ¡Feliz Cumpleaños, #{userName}! 🥳
+
+    div.birthday-hero-card
+        span.birthday-hero-icon 🏋️‍♂️✨🎂
+        p.birthday-highlight-text ¡Que este nuevo año de vida venga lleno de fuerza y nuevas metas!
+
+    p.birthday-message
+        | De parte de todo el equipo de #[strong #{gymName}], queremos enviarte una felicitación muy especial en tu cumpleaños y agradecerte por formar parte de nuestra comunidad deportiva.
+
+    div.birthday-wishes-box
+        h3.birthday-wishes-title 🏆 Tu constancia es tu mayor victoria
+        p.birthday-wishes-text
+            | Cada entrenamiento, cada gota de sudor y cada esfuerzo que entregas demuestra tu disciplina. Hoy celebramos tu vida y te deseamos un año repleto de salud inquebrantable, bienestar y energía positiva para alcanzar todo lo que te propongas.
+
+    p.birthday-message(style="margin-top: 18px;")
+        | ¡Te esperamos en #[strong #{gymName}] para celebrar y seguir entrenando al máximo nivel!
+
+    if gymUrl
+        div(style="text-align: center; margin: 25px 0 15px 0;")
+            a.btn-celebration(href=gymUrl target="_blank")
+                | Ir al portal de #{gymName} 🚀
+
+    p.birthday-salute
+        | ¡Disfruta al máximo tu día junto a tus seres queridos! 🥂🎁

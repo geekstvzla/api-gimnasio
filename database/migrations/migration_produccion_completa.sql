@@ -80,6 +80,22 @@ CREATE TABLE IF NOT EXISTS `gym_attendances` (
   INDEX `idx_att_user_gym_date` (`user_id`, `gym_id`, `checkin_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 2.5 Tabla de Logs de Correos de Cumpleaños (Anti-duplicidad de envíos anuales)
+CREATE TABLE IF NOT EXISTS `birthday_email_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `gym_id` INT NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `birthday` DATE NOT NULL,
+  `year_sent` INT NOT NULL,
+  `sent_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'SENT',
+  `error_message` TEXT NULL,
+  UNIQUE KEY `idx_user_gym_year` (`user_id`, `gym_id`, `year_sent`),
+  KEY `idx_sent_at` (`sent_at`),
+  KEY `idx_gym_sent` (`gym_id`, `year_sent`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 -- 3. DATOS INICIALES REQUERIDOS (INSERTS)
 -- -----------------------------------------------------------------------

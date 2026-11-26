@@ -145,6 +145,42 @@ const gymNewUserAdmin = async (params) => {
 
 };
 
+const birthdayClient = async (params) => {
+    let locale = translation(params.langId || 1);
+    let gymName = params.gymName || 'Gimnasio';
+    params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+    params.lang = locale;
+    params.locals = {
+        userName: params.userName,
+        fullName: params.fullName || params.userName,
+        gymName: gymName,
+        gymUrl: params.gymUrl || ''
+    };
+    params.template = 'birthdayClient/' + locale;
+
+    let mailRs = await sendEmailTemplate(params);
+    return mailRs;
+};
+
+const birthdayAdminReport = async (params) => {
+    let locale = translation(params.langId || 1);
+    let gymName = params.gymName || 'Gimnasio';
+    params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+    params.lang = locale;
+    params.locals = {
+        adminName: params.adminName || 'Administrador',
+        gymName: gymName,
+        todayDate: params.todayDate || new Date().toLocaleDateString('es-VE'),
+        celebrantsCount: params.celebrants ? params.celebrants.length : 0,
+        celebrants: params.celebrants || [],
+        dashboardUrl: params.dashboardUrl || ''
+    };
+    params.template = 'birthdayAdminReport/' + locale;
+
+    let mailRs = await sendEmailTemplate(params);
+    return mailRs;
+};
+
 const sendEmailTemplate = (params) => {
 
     return new Promise(async function (resolve, reject) {
@@ -278,5 +314,7 @@ module.exports = {
     newUserEnroll,
     gymWelcomeUser,
     gymNewUserAdmin,
-    getGymInfoForEmail
+    getGymInfoForEmail,
+    birthdayClient,
+    birthdayAdminReport
 }

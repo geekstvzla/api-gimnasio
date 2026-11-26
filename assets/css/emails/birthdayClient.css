@@ -1,0 +1,104 @@
+/* ===================================================
+   BIRTHDAY CLIENT EMAIL STYLES
+   api-gimnasio
+   =================================================== */
+
+.birthday-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 8px 20px;
+    border-radius: 9999px;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.birthday-title {
+    color: #0F172A !important;
+    font-size: 26px !important;
+    font-weight: 800 !important;
+    line-height: 1.3 !important;
+    margin: 0 0 15px 0 !important;
+    text-align: center !important;
+}
+
+.birthday-hero-card {
+    background: linear-gradient(180deg, #EFF6FF 0%, #DBEAFE 100%);
+    border: 2px solid #BFDBFE;
+    border-radius: 16px;
+    padding: 24px 20px;
+    margin: 20px 0 24px 0;
+    text-align: center;
+}
+
+.birthday-hero-icon {
+    font-size: 44px;
+    line-height: 1;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.birthday-highlight-text {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: #1E40AF !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+}
+
+.birthday-message {
+    color: #334155 !important;
+    font-size: 16px !important;
+    line-height: 1.65 !important;
+    margin: 16px 0 !important;
+    text-align: center !important;
+}
+
+.birthday-wishes-box {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 5px solid #2563EB;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 22px 0;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.birthday-wishes-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0F172A;
+    margin: 0 0 8px 0;
+}
+
+.birthday-wishes-text {
+    font-size: 14px !important;
+    color: #475569 !important;
+    line-height: 1.55 !important;
+    margin: 0 !important;
+}
+
+.btn-celebration {
+    display: inline-block;
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    color: #FFFFFF !important;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 12px 28px;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.birthday-salute {
+    color: #64748B !important;
+    font-size: 14px !important;
+    font-style: italic;
+    text-align: center !important;
+    margin: 24px 0 0 0 !important;
+}
