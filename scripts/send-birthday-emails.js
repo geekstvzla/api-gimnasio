@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const birthdayModel = require('../models/birthday.js');
 const emailsModel = require('../models/emails.js');
 
