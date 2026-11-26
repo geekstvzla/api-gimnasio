@@ -4,6 +4,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "update-exchange-rate": "node ./scripts/update-exchange-rate.js",
     "send-birthday-emails": "node ./scripts/send-birthday-emails.js"
   },
   "dependencies": {

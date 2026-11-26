@@ -1,50 +1,205 @@
-require('dotenv').config()
-let db = require('../config/database.js')
+require('dotenv').config();
+let db = require('../config/database.js');
 
 const activeCurrencies = () => {
-
-    return new Promise(function(resolve, reject) { 
-
+    return new Promise(function (resolve, reject) {
         let queryString = `SELECT c.currency_id,
-                                  c.description currency_desc,
-                                  c.symbol currency_symbol
+                                  cl.description AS currency_desc,
+                                  c.symbol AS currency_symbol,
+                                  c.abbreviation,
+                                  c.decimals
                            FROM currencies c
+                           LEFT JOIN currencies_lang cl ON c.currency_id = cl.currency_id AND cl.language_id = 1
                            WHERE c.status_id = 1
-                           ORDER BY c.description ASC;`
-        db.query(queryString, [], function(err, result) {
-
-            if(err) {
-    
-                reject({
-                    response: {
-                        message: "Error al tratar de ejecutar la consulta en la linea 8",
-                        status: "error",
-                        statusCode: 0
+                           ORDER BY c.currency_id ASC;`;
+        db.query(queryString, [], function (err, result) {
+            if (err) {
+                let fallbackQuery = `SELECT c.currency_id,
+                                            c.symbol AS currency_symbol,
+                                            c.abbreviation
+                                     FROM currencies c
+                                     WHERE c.status_id = 1
+                                     ORDER BY c.currency_id ASC;`;
+                db.query(fallbackQuery, [], function (fbErr, fbResult) {
+                    if (fbErr) {
+                        return reject({
+                            response: {
+                                message: "Error al consultar monedas activas",
+                                status: "error",
+                                statusCode: 0
+                            }
+                        });
                     }
-                })
-    
+                    return resolve({
+                        response: {
+                            currencies: fbResult,
+                            status: "success",
+                            statusCode: 1
+                        }
+                    });
+                });
             } else {
-    
                 resolve({
                     response: {
                         currencies: result,
                         status: "success",
                         statusCode: 1
                     }
-                })
-    
+                });
             }
-    
-        })
+        });
+    }).catch(function (error) {
+        return error;
+    });
+};
 
-    }).catch(function(error) {
+const currentExchangeRate = (lang = 'ESP') => {
+    return new Promise(function (resolve, reject) {
+        const langCode = (lang && typeof lang === 'string') ? lang : 'ESP';
+        let queryString = `SELECT c.currency_id AS from_currency_id,
+                                  c.symbol AS from_currency_symbol,
+                                  cl.description AS from_currency_name,
+                                  c.abbreviation AS from_currency_abbrevition,
+                                  c.decimals AS from_currency_decimals,
+                                  ce.to_currency_id,
+                                  c2.symbol AS to_currency_symbol,
+                                  cl2.description AS to_currency_name,
+                                  c2.abbreviation AS to_currency_abbrevition,
+                                  ce.rate
+                           FROM currencies_exchange ce
+                           INNER JOIN currencies c ON ce.from_currency_id = c.currency_id
+                           INNER JOIN currencies_lang cl ON c.currency_id = cl.currency_id
+                           INNER JOIN languages l ON cl.language_id = l.language_id
+                           INNER JOIN currencies c2 ON ce.to_currency_id = c2.currency_id
+                           INNER JOIN currencies_lang cl2 ON c2.currency_id = cl2.currency_id
+                           INNER JOIN languages l2 ON cl2.language_id = l2.language_id
+                           WHERE UPPER(l.code) = UPPER(?) 
+                           AND UPPER(l2.code) = UPPER(?);`;
 
-        return(error)
-      
-    })
+        db.query(queryString, [langCode, langCode], function (err, result) {
+            if (err) {
+                reject({
+                    response: {
+                        message: "Error al consultar las tasas de cambio actuales",
+                        status: "error",
+                        statusCode: 0,
+                        error: err.message || err
+                    }
+                });
+            } else {
+                resolve({
+                    response: {
+                        currencies: result,
+                        status: "success",
+                        statusCode: 1
+                    }
+                });
+            }
+        });
+    }).catch(function (error) {
+        return error;
+    });
+};
 
-}
+const updateExchangeRate = (rates) => {
+    return new Promise(function (resolve, reject) {
+        const queryCurrencies = `SELECT currency_id, symbol FROM currencies WHERE symbol IN ('Bs', '$', '€')`;
+
+        db.query(queryCurrencies, [], function (err, currencies) {
+            if (err) {
+                return reject({
+                    response: {
+                        message: "Error al consultar las monedas en la base de datos",
+                        status: "error",
+                        statusCode: 0,
+                        error: err.message || err
+                    }
+                });
+            }
+
+            const currencyMap = {};
+            currencies.forEach(item => {
+                currencyMap[item.symbol] = item.currency_id;
+            });
+
+            const bsId = currencyMap['Bs'];
+            const usdId = currencyMap['$'];
+            const eurId = currencyMap['€'];
+
+            if (!bsId || !usdId || !eurId) {
+                return reject({
+                    response: {
+                        message: "No se encontró la configuración de monedas necesaria en la base de datos (Bs, $, €)",
+                        status: "error",
+                        statusCode: 0
+                    }
+                });
+            }
+
+            const updatePair = (fromId, toId, rate) => {
+                return new Promise(function (resolvePair, rejectPair) {
+                    const querySelect = `SELECT currencies_exchange_id FROM currencies_exchange WHERE from_currency_id = ? AND to_currency_id = ? LIMIT 1`;
+                    db.query(querySelect, [fromId, toId], function (errSelect, rows) {
+                        if (errSelect) {
+                            return rejectPair(errSelect);
+                        }
+
+                        if (rows.length > 0) {
+                            const updateSql = `UPDATE currencies_exchange SET rate = ?, status_id = 1 WHERE currencies_exchange_id = ?`;
+                            db.query(updateSql, [rate, rows[0].currencies_exchange_id], function (errUpdate) {
+                                if (errUpdate) {
+                                    return rejectPair(errUpdate);
+                                }
+                                resolvePair();
+                            });
+                        } else {
+                            const insertSql = `INSERT INTO currencies_exchange (from_currency_id, to_currency_id, rate, status_id) VALUES (?, ?, ?, 1)`;
+                            db.query(insertSql, [fromId, toId, rate], function (errInsert) {
+                                if (errInsert) {
+                                    return rejectPair(errInsert);
+                                }
+                                resolvePair();
+                            });
+                        }
+                    });
+                });
+            };
+
+            const inverseUsdRate = rates.usd > 0 ? Number((1 / rates.usd).toFixed(8)) : 0;
+
+            Promise.all([
+                updatePair(usdId, bsId, rates.usd),
+                updatePair(eurId, bsId, rates.eur),
+                updatePair(bsId, usdId, inverseUsdRate)
+            ])
+                .then(() => {
+                    resolve({
+                        response: {
+                            message: "Tasas de cambio actualizadas correctamente",
+                            status: "success",
+                            statusCode: 1,
+                            rates: rates
+                        }
+                    });
+                })
+                .catch(errorUpdate => {
+                    reject({
+                        response: {
+                            message: "Error al actualizar las tasas de cambio",
+                            status: "error",
+                            statusCode: 0,
+                            error: errorUpdate.message || errorUpdate
+                        }
+                    });
+                });
+        });
+    }).catch(function (error) {
+        return error;
+    });
+};
 
 module.exports = {
-    activeCurrencies
-}
+    activeCurrencies,
+    currentExchangeRate,
+    updateExchangeRate
+};

@@ -137,3 +137,62 @@ WHERE NOT EXISTS (SELECT 1 FROM `gym_sub_plans` WHERE `gym_id` = 1 AND `name` = 
 INSERT INTO `gym_sub_plans` (`gym_id`, `name`, `billing_period_id`, `weekly_attendance_limit`, `duration_days`, `price`, `description`, `created_at`, `status_id`)
 SELECT 1, 'Plan 5 Días Semanales', 3, 5, 30, 30.00, 'Hasta 5 entrenamientos por semana. Corte semanal cada lunes (no acumulable).', NOW(), 1
 WHERE NOT EXISTS (SELECT 1 FROM `gym_sub_plans` WHERE `gym_id` = 1 AND `name` = 'Plan 5 Días Semanales');
+
+
+-- 2.6 Tablas de Monedas e Idiomas de Monedas (Tasas de Cambio)
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `currencies` (
+  `currency_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `abbreviation` VARCHAR(3) NOT NULL,
+  `symbol` VARCHAR(5) DEFAULT NULL,
+  `decimals` INT NOT NULL DEFAULT 2,
+  `status_id` INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (`currency_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `currencies_lang` (
+  `currencies_lang_id` INT NOT NULL AUTO_INCREMENT,
+  `currency_id` INT NOT NULL,
+  `language_id` INT NOT NULL,
+  `description` VARCHAR(45) NOT NULL,
+  `status_id` INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (`currencies_lang_id`),
+  KEY `idx_curr_lang` (`currency_id`, `language_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `currencies_exchange` (
+  `currencies_exchange_id` INT NOT NULL AUTO_INCREMENT,
+  `from_currency_id` INT NOT NULL,
+  `to_currency_id` INT NOT NULL,
+  `rate` DECIMAL(20,8) NOT NULL,
+  `status_id` INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (`currencies_exchange_id`),
+  KEY `idx_from_to` (`from_currency_id`, `to_currency_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- 3.3 Monedas y Traducciones Iniciales
+-- -----------------------------------------------------------------------
+INSERT INTO `currencies` (`currency_id`, `abbreviation`, `symbol`, `decimals`, `status_id`)
+VALUES 
+  (1, 'VES', 'Bs', 2, 1),
+  (2, 'USD', '$', 2, 1),
+  (3, 'EUR', '€', 2, 1)
+ON DUPLICATE KEY UPDATE 
+  `abbreviation` = VALUES(`abbreviation`),
+  `symbol` = VALUES(`symbol`),
+  `decimals` = VALUES(`decimals`),
+  `status_id` = VALUES(`status_id`);
+
+INSERT INTO `currencies_lang` (`currencies_lang_id`, `currency_id`, `language_id`, `description`, `status_id`)
+VALUES
+  (1, 1, 1, 'Bolívares', 1),
+  (2, 1, 2, 'Bolivars', 1),
+  (3, 2, 1, 'Dólares', 1),
+  (4, 2, 2, 'Dollars', 1),
+  (5, 3, 1, 'Euros', 1),
+  (6, 3, 2, 'Euros', 1)
+ON DUPLICATE KEY UPDATE 
+  `description` = VALUES(`description`),
+  `status_id` = VALUES(`status_id`);
+
