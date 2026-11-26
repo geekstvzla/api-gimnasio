@@ -6,11 +6,12 @@
 -- 1. ALTERACIONES A TABLAS EXISTENTES
 -- -----------------------------------------------------------------------
 
--- 1.1 Configuración de inicio de semana en gimnasios (1=Lunes, 7=Domingo)
+-- 1.1 Configuración de inicio de semana y moneda por defecto en gimnasios (3=Euro para Del Valle Fitness)
 ALTER TABLE `gyms` 
-ADD COLUMN `week_start_day` INT NOT NULL DEFAULT 1 COMMENT '1=Lunes, 7=Domingo';
+ADD COLUMN `week_start_day` INT NOT NULL DEFAULT 1 COMMENT '1=Lunes, 7=Domingo',
+ADD COLUMN `currency_id` INT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'Moneda por defecto (1=Bs, 2=USD, 3=EUR)' AFTER `country_region_id`;
 
-UPDATE `gyms` SET `week_start_day` = 1 WHERE `gym_id` = 1 AND `week_start_day` IS NULL;
+UPDATE `gyms` SET `week_start_day` = 1, `currency_id` = 3 WHERE `gym_id` = 1;
 
 -- 1.2 Fechas clave en la tabla de usuarios
 ALTER TABLE `users` 

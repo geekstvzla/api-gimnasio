@@ -7,8 +7,15 @@ const gymInfo = (slug) => {
 
         let queryString = `SELECT g.gym_id,
                                   g.name,
+                                  g.slug,
+                                  COALESCE(g.currency_id, 3) AS currency_id,
+                                  COALESCE(c.symbol, '€') AS currency_symbol,
+                                  COALESCE(c.abbreviation, 'EUR') AS currency_abbreviation,
+                                  COALESCE(cl.description, 'Euros') AS currency_name,
                                   CONCAT('${process.env.API_PUBLIC + "/images/gyms/"}',g.gym_id,'/',g.logo) AS logo
                            FROM gyms g
+                           LEFT JOIN currencies c ON g.currency_id = c.currency_id
+                           LEFT JOIN currencies_lang cl ON c.currency_id = cl.currency_id AND cl.language_id = 1
                            WHERE g.slug = ?;`;
         db.query(queryString, [slug], function (err, result) {
 
@@ -106,4 +113,4 @@ const getRoles = (langId) => {
 module.exports = {
     gymInfo,
     getRoles
-}
+}

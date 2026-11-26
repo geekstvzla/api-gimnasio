@@ -49,9 +49,16 @@ const getPlans = async (gymId = 1, langId = 1) => {
                 gsp.duration_days,
                 CAST(gsp.price AS DECIMAL(10,2)) AS price,
                 gsp.description,
-                gsp.status_id
+                gsp.status_id,
+                COALESCE(g.currency_id, 3) AS currency_id,
+                COALESCE(c.symbol, '€') AS currency_symbol,
+                COALESCE(c.abbreviation, 'EUR') AS currency_abbreviation,
+                COALESCE(cl.description, 'Euros') AS currency_name
          FROM gym_sub_plans gsp
          LEFT JOIN billing_period_lang bpl ON bpl.billing_period_id = gsp.billing_period_id AND bpl.language_id = ?
+         LEFT JOIN gyms g ON g.gym_id = gsp.gym_id
+         LEFT JOIN currencies c ON c.currency_id = g.currency_id
+         LEFT JOIN currencies_lang cl ON cl.currency_id = c.currency_id AND cl.language_id = 1
          WHERE gsp.gym_id = ? AND gsp.status_id = 1
          ORDER BY gsp.price ASC`,
         [languageId, gymId]
@@ -63,12 +70,28 @@ const getPlans = async (gymId = 1, langId = 1) => {
  * Obtener estado de suscripción y asistencias de la semana de un usuario
  */
 const getUserSubscriptionStatus = async (userId, gymId = 1) => {
-    // 1. Obtener info del gimnasio (corte semanal)
+    // 1. Obtener info del gimnasio (corte semanal y moneda base)
     const [gymRows] = await db.query(
-        'SELECT gym_id, name, week_start_day FROM gyms WHERE gym_id = ?',
+        `SELECT g.gym_id, 
+                g.name, 
+                g.week_start_day,
+                COALESCE(g.currency_id, 3) AS currency_id,
+                COALESCE(c.symbol, '€') AS currency_symbol,
+                COALESCE(c.abbreviation, 'EUR') AS currency_abbreviation,
+                COALESCE(cl.description, 'Euros') AS currency_name
+         FROM gyms g
+         LEFT JOIN currencies c ON c.currency_id = g.currency_id
+         LEFT JOIN currencies_lang cl ON cl.currency_id = c.currency_id AND cl.language_id = 1
+         WHERE g.gym_id = ?`,
         [gymId]
     );
-    const gym = gymRows[0] || { week_start_day: 1 };
+    const gym = gymRows[0] || { 
+        week_start_day: 1, 
+        currency_id: 3, 
+        currency_symbol: '€', 
+        currency_abbreviation: 'EUR', 
+        currency_name: 'Euros' 
+    };
     const weekStartDay = gym.week_start_day || 1;
 
     // 2. Info de fechas del usuario (joined_at, billing_anchor_day)
@@ -168,6 +191,15 @@ const getUserSubscriptionStatus = async (userId, gymId = 1) => {
     }
 
     return {
+        gym: {
+            gym_id: gym.gym_id,
+            name: gym.name,
+            week_start_day: gym.week_start_day,
+            currency_id: Number(gym.currency_id) || 3,
+            currency_symbol: gym.currency_symbol || '€',
+            currency_abbreviation: gym.currency_abbreviation || 'EUR',
+            currency_name: gym.currency_name || 'Euros'
+        },
         userProfile,
         subscription: activeSub,
         hasActiveSubscription,

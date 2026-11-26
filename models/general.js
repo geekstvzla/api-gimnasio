@@ -166,11 +166,17 @@ const updateExchangeRate = (rates) => {
             };
 
             const inverseUsdRate = rates.usd > 0 ? Number((1 / rates.usd).toFixed(8)) : 0;
+            const inverseEurRate = rates.eur > 0 ? Number((1 / rates.eur).toFixed(8)) : 0;
+            const eurToUsdRate = rates.usd > 0 ? Number((rates.eur / rates.usd).toFixed(8)) : 0;
+            const usdToEurRate = rates.eur > 0 ? Number((rates.usd / rates.eur).toFixed(8)) : 0;
 
             Promise.all([
                 updatePair(usdId, bsId, rates.usd),
                 updatePair(eurId, bsId, rates.eur),
-                updatePair(bsId, usdId, inverseUsdRate)
+                updatePair(bsId, usdId, inverseUsdRate),
+                updatePair(bsId, eurId, inverseEurRate),
+                updatePair(eurId, usdId, eurToUsdRate),
+                updatePair(usdId, eurId, usdToEurRate)
             ])
                 .then(() => {
                     resolve({
