@@ -1711,7 +1711,12 @@ router.post('/create-user', async function (req, res, next) {
                 fd.append('userId', geekUserId || masterUserId);
 
                 const uploadUrl = `${process.env.API_GEEKST || 'http://localhost:3001'}/users/upload-avatar`;
-                const uploadRs = await axios.post(uploadUrl, fd);
+                const uploadRs = await axios.post(uploadUrl, fd, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*'
+                    }
+                });
 
                 if (uploadRs.data && uploadRs.data.avatar) {
                     const avatarRelativePath = uploadRs.data.avatar;
