@@ -197,3 +197,19 @@ ON DUPLICATE KEY UPDATE
   `description` = VALUES(`description`),
   `status_id` = VALUES(`status_id`);
 
+
+-- 3.4 Tasas de Cambio Iniciales (currencies_exchange)
+-- -----------------------------------------------------------------------
+INSERT INTO `currencies_exchange` (`currencies_exchange_id`, `from_currency_id`, `to_currency_id`, `rate`, `status_id`)
+VALUES
+  (1, 2, 1, 924.35340000, 1), -- USD -> Bs
+  (2, 3, 1, 1011.73252690, 1), -- EUR -> Bs
+  (3, 1, 2, 0.00108184, 1),   -- Bs -> USD
+  (4, 1, 3, 0.00098840, 1),   -- Bs -> EUR
+  (5, 3, 2, 1.09453000, 1),   -- EUR -> USD
+  (6, 2, 3, 0.91363416, 1)    -- USD -> EUR
+ON DUPLICATE KEY UPDATE 
+  `rate` = VALUES(`rate`),
+  `status_id` = VALUES(`status_id`);
+
+
