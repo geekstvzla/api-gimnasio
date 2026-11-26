@@ -24,6 +24,11 @@ ALTER TABLE `gym_sub_plans`
 ADD COLUMN `name` VARCHAR(100) NOT NULL DEFAULT '' AFTER `gym_id`,
 ADD COLUMN `duration_days` INT NOT NULL DEFAULT 30 AFTER `weekly_attendance_limit`;
 
+-- 1.4 Método de pago en suscripciones de usuario (por si la tabla user_subscriptions ya había sido creada antes)
+ALTER TABLE `user_subscriptions` 
+ADD COLUMN `payment_method_id` INT NULL DEFAULT NULL AFTER `gym_sub_plan_id`,
+ADD INDEX `idx_sub_pm` (`payment_method_id`);
+
 
 -- 2. CREACIÓN DE NUEVAS TABLAS
 -- -----------------------------------------------------------------------

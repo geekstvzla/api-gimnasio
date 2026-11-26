@@ -22,6 +22,15 @@ const langs = (lang) => {
 
 };
 
+const formatUserAvatarUrl = (rawAvatar) => {
+    if (!rawAvatar || rawAvatar === 'default-avatar.webp') return '';
+    if (rawAvatar.startsWith('http://') || rawAvatar.startsWith('https://')) return rawAvatar;
+    const baseApi = process.env.API_GEEKST || 'http://localhost:3001';
+    const clean = rawAvatar.startsWith('/') ? rawAvatar.slice(1) : rawAvatar;
+    const finalPath = clean.startsWith('images/users/') ? clean : `images/users/${clean}`;
+    return `${baseApi}/${finalPath}`;
+};
+
 router.post('/activate-user-account', async function (req, res, next) {
 
     let code = req.query.code;
@@ -697,7 +706,7 @@ router.post('/google-sign-in', async function (req, res, next) {
             await usersModel.signIn([secureId, langId]);
 
             userData = {
-                avatar: userAvatar || googlePicture || 'default-avatar.webp',
+                avatar: formatUserAvatarUrl(userAvatar || googlePicture) || 'default-avatar.webp',
                 documentId: existingUser.document_id || '',
                 email: email,
                 id: secureId,
@@ -861,7 +870,7 @@ router.post('/sign-in', async function (req, res, next) {
                 let data = await usersModel.signIn(signInParams);
                 message = langData.signIn.success;
                 userData = {
-                    avatar: rs.data.response.avatar,
+                    avatar: formatUserAvatarUrl(rs.data.response.avatar) || 'default-avatar.webp',
                     documentId: rs.data.response.documentId,
                     email: email,
                     id: rs.data.response.userId,
