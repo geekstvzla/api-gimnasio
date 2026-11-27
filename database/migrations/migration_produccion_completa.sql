@@ -11,9 +11,10 @@ ALTER TABLE `gyms`
 ADD COLUMN `week_start_day` INT NOT NULL DEFAULT 1 COMMENT '1=Lunes, 7=Domingo',
 ADD COLUMN `currency_id` INT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'Moneda por defecto (1=Bs, 2=USD, 3=EUR)' AFTER `country_region_id`,
 ADD COLUMN `primary_color` VARCHAR(20) NOT NULL DEFAULT '#2563eb' COMMENT 'Color primario de acento para la interfaz' AFTER `week_start_day`,
-ADD COLUMN `secondary_color` VARCHAR(20) NOT NULL DEFAULT '#1d4ed8' COMMENT 'Color secundario / hover' AFTER `primary_color`;
+ADD COLUMN `secondary_color` VARCHAR(20) NOT NULL DEFAULT '#1d4ed8' COMMENT 'Color secundario / hover' AFTER `primary_color`,
+ADD COLUMN `sidebar_color` VARCHAR(20) NOT NULL DEFAULT '#0f172a' COMMENT 'Color de fondo del menú lateral (sidebar)' AFTER `secondary_color`;
 
-UPDATE `gyms` SET `week_start_day` = 1, `currency_id` = 3, `primary_color` = '#7c3aed', `secondary_color` = '#6d28d9' WHERE `gym_id` = 1;
+UPDATE `gyms` SET `week_start_day` = 1, `currency_id` = 3, `primary_color` = '#7c3aed', `secondary_color` = '#6d28d9', `sidebar_color` = '#000000' WHERE `gym_id` = 1;
 
 -- 1.2 Fechas clave en la tabla de usuarios
 ALTER TABLE `users` 

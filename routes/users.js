@@ -499,6 +499,9 @@ async function getUserGyms(dbConn, geekUserId, email, langId = 'esp') {
                 g.gym_id AS gymId, 
                 g.name, 
                 g.slug, 
+                COALESCE(g.primary_color, '#2563eb') AS primaryColor,
+                COALESCE(g.secondary_color, '#1d4ed8') AS secondaryColor,
+                COALESCE(g.sidebar_color, '#0f172a') AS sidebarColor,
                 IF(g.logo IS NOT NULL AND g.logo != '', 
                    CONCAT('${apiPublic}/images/gyms/', g.gym_id, '/', g.logo), 
                    NULL
@@ -523,6 +526,9 @@ async function getUserGyms(dbConn, geekUserId, email, langId = 'esp') {
                     g.gym_id AS gymId, 
                     g.name, 
                     g.slug, 
+                    COALESCE(g.primary_color, '#2563eb') AS primaryColor,
+                    COALESCE(g.secondary_color, '#1d4ed8') AS secondaryColor,
+                    COALESCE(g.sidebar_color, '#0f172a') AS sidebarColor,
                     IF(g.logo IS NOT NULL AND g.logo != '', 
                        CONCAT('${apiPublic}/images/gyms/', g.gym_id, '/', g.logo), 
                        NULL
@@ -549,6 +555,9 @@ async function getUserGyms(dbConn, geekUserId, email, langId = 'esp') {
                     name: r.name,
                     slug: r.slug,
                     logo: r.logo,
+                    primaryColor: r.primaryColor,
+                    secondaryColor: r.secondaryColor,
+                    sidebarColor: r.sidebarColor,
                     roleId: r.roleId,
                     roleName: r.roleName,
                     statusId: r.statusId

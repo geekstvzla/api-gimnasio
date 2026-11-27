@@ -10,6 +10,7 @@ const gymInfo = (slug) => {
                                   g.slug,
                                   COALESCE(g.primary_color, '#2563eb') AS primary_color,
                                   COALESCE(g.secondary_color, '#1d4ed8') AS secondary_color,
+                                  COALESCE(g.sidebar_color, '#0f172a') AS sidebar_color,
                                   COALESCE(g.currency_id, 3) AS currency_id,
                                   COALESCE(c.symbol, '€') AS currency_symbol,
                                   COALESCE(c.abbreviation, 'EUR') AS currency_abbreviation,
