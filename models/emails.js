@@ -181,6 +181,28 @@ const birthdayAdminReport = async (params) => {
     return mailRs;
 };
 
+const subscriptionReminder = async (params) => {
+    let locale = translation(params.langId || 1);
+    let gymName = params.gymName || 'Gimnasio';
+    params.from = `"${gymName}" <contacto@sumandokilometros.com.ve>`;
+    params.lang = locale;
+    params.locals = {
+        userName: params.userName,
+        gymName: gymName,
+        gymSubtitle: params.gymSubtitle || null,
+        notificationType: params.notificationType,
+        diffDays: params.diffDays,
+        endDateFormatted: params.endDateFormatted,
+        planName: params.planName,
+        priceFormatted: params.priceFormatted || null,
+        gymUrl: params.gymUrl || ''
+    };
+    params.template = 'subscriptionReminder/' + locale;
+
+    let mailRs = await sendEmailTemplate(params);
+    return mailRs;
+};
+
 const sendEmailTemplate = (params) => {
 
     return new Promise(async function (resolve, reject) {
@@ -316,5 +338,6 @@ module.exports = {
     gymNewUserAdmin,
     getGymInfoForEmail,
     birthdayClient,
-    birthdayAdminReport
+    birthdayAdminReport,
+    subscriptionReminder
 }

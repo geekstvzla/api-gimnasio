@@ -20,10 +20,16 @@ ADD COLUMN `billing_anchor_day` INT NULL DEFAULT NULL COMMENT 'Día pactado de c
 
 UPDATE `users` SET `joined_at` = DATE(`login_date`) WHERE `joined_at` IS NULL AND `login_date` IS NOT NULL;
 
--- 1.3 Nombre y duración en días para los planes de suscripción
+-- 1.3 Nombre, duración y configuración de vencimientos para planes de suscripción
 ALTER TABLE `gym_sub_plans` 
 ADD COLUMN `name` VARCHAR(100) NOT NULL DEFAULT '' AFTER `gym_id`,
-ADD COLUMN `duration_days` INT NOT NULL DEFAULT 30 AFTER `weekly_attendance_limit`;
+ADD COLUMN `duration_days` INT NOT NULL DEFAULT 30 AFTER `weekly_attendance_limit`,
+ADD COLUMN `eval_expiration` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Evalúa vencimiento y envía recordatorios, 0=No' AFTER `duration_days`,
+ADD COLUMN `reminder_days_before` INT NOT NULL DEFAULT 5 COMMENT 'Días previos al vencimiento para notificar' AFTER `eval_expiration`,
+ADD COLUMN `reminder_days_after` INT NOT NULL DEFAULT 3 COMMENT 'Días posteriores al vencimiento para notificar' AFTER `reminder_days_before`;
+
+UPDATE `gym_sub_plans` SET `eval_expiration` = 0, `reminder_days_before` = 0, `reminder_days_after` = 0 WHERE `duration_days` <= 1 OR LOWER(`name`) LIKE '%diario%';
+UPDATE `gym_sub_plans` SET `eval_expiration` = 1, `reminder_days_before` = 5, `reminder_days_after` = 3 WHERE `duration_days` > 1 AND LOWER(`name`) NOT LIKE '%diario%';
 
 -- 1.4 Método de pago en suscripciones de usuario (por si la tabla user_subscriptions ya había sido creada antes)
 ALTER TABLE `user_subscriptions` 
@@ -100,6 +106,24 @@ CREATE TABLE IF NOT EXISTS `birthday_email_logs` (
   UNIQUE KEY `idx_user_gym_year` (`user_id`, `gym_id`, `year_sent`),
   KEY `idx_sent_at` (`sent_at`),
   KEY `idx_gym_sent` (`gym_id`, `year_sent`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2.6 Tabla de Logs de Correos de Recordatorio de Vencimiento de Suscripción (Anti-duplicidad)
+CREATE TABLE IF NOT EXISTS `subscription_email_logs` (
+  `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `user_subscription_id` BIGINT UNSIGNED NOT NULL,
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `gym_id` INT NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `notification_type` ENUM('EXPIRING_SOON', 'EXPIRES_TODAY', 'EXPIRED') NOT NULL,
+  `diff_days` INT NOT NULL COMMENT 'Diferencia en días (+5, 0, -1, -2, -3)',
+  `sent_date` DATE NOT NULL,
+  `sent_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'SENT',
+  `error_message` TEXT NULL,
+  UNIQUE KEY `idx_sub_notif_diff` (`user_subscription_id`, `notification_type`, `diff_days`),
+  INDEX `idx_sub_user_gym` (`user_id`, `gym_id`),
+  INDEX `idx_sub_sent_date` (`sent_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

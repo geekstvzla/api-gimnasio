@@ -499,6 +499,148 @@ const getPaymentMethods = async (langId = 1) => {
     return rows;
 };
 
+/**
+ * Actualiza el estado a 'expired' de aquellas suscripciones activas cuya fecha de fin ya pasó.
+ */
+const updateExpiredSubscriptions = async (targetDate = null) => {
+    const date = targetDate || new Date().toISOString().slice(0, 10);
+    const [result] = await db.query(
+        `UPDATE user_subscriptions
+         SET status = 'expired'
+         WHERE status = 'active' AND end_date < ?`,
+        [date]
+    );
+    return result.affectedRows;
+};
+
+/**
+ * Obtiene las suscripciones candidatas para recordatorios por email
+ * Filtra planes que evalúan vencimiento (eval_expiration = 1),
+ * verifica los hitos (5 días antes, hoy, hasta 3 días después),
+ * descarta si ya tienen una suscripción posterior activa/programada,
+ * y descarta si ya se envió el correo para este hito específico (anti-duplicidad).
+ */
+const getSubscriptionsNeedingReminders = async (options = {}) => {
+    const targetDate = options.targetDate || new Date().toISOString().slice(0, 10);
+    const gymIdFilter = options.gymId ? Number(options.gymId) : null;
+    const force = Boolean(options.force);
+
+    const queryParams = [
+        targetDate,             // SELECT diff_days
+        targetDate, targetDate, // SELECT notification_type
+        targetDate, targetDate, targetDate, targetDate // WHERE DATEDIFF conditions
+    ];
+
+    let gymFilterSql = '';
+    if (gymIdFilter) {
+        gymFilterSql = 'AND us.gym_id = ?';
+        queryParams.push(gymIdFilter);
+    }
+
+    let forceFilterSql = '';
+    if (!force) {
+        forceFilterSql = `
+            AND NOT EXISTS (
+                SELECT 1 FROM subscription_email_logs sel
+                WHERE sel.user_subscription_id = us.user_subscription_id
+                  AND sel.notification_type = (
+                      CASE
+                          WHEN DATEDIFF(us.end_date, ?) = gsp.reminder_days_before THEN 'EXPIRING_SOON'
+                          WHEN DATEDIFF(us.end_date, ?) = 0 THEN 'EXPIRES_TODAY'
+                          ELSE 'EXPIRED'
+                      END
+                  )
+                  AND sel.diff_days = DATEDIFF(us.end_date, ?)
+            )
+        `;
+        queryParams.push(targetDate, targetDate, targetDate);
+    }
+
+    const query = `
+        SELECT 
+            us.user_subscription_id,
+            us.user_id,
+            us.gym_id,
+            DATE_FORMAT(us.start_date, '%Y-%m-%d') AS start_date,
+            DATE_FORMAT(us.end_date, '%Y-%m-%d') AS end_date,
+            DATE_FORMAT(us.end_date, '%d/%m/%Y') AS end_date_formatted,
+            us.status AS subscription_status,
+            gsp.gym_sub_plan_id,
+            gsp.name AS plan_name,
+            CAST(gsp.price AS DECIMAL(10,2)) AS plan_price,
+            gsp.reminder_days_before,
+            gsp.reminder_days_after,
+            u.email,
+            TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS user_name,
+            u.first_name,
+            g.name AS gym_name,
+            g.slug AS gym_slug,
+            COALESCE(c.symbol, '€') AS currency_symbol,
+            DATEDIFF(us.end_date, ?) AS diff_days,
+            CASE
+                WHEN DATEDIFF(us.end_date, ?) = gsp.reminder_days_before THEN 'EXPIRING_SOON'
+                WHEN DATEDIFF(us.end_date, ?) = 0 THEN 'EXPIRES_TODAY'
+                ELSE 'EXPIRED'
+            END AS notification_type
+        FROM user_subscriptions us
+        INNER JOIN gym_sub_plans gsp ON gsp.gym_sub_plan_id = us.gym_sub_plan_id
+        INNER JOIN users u ON u.user_id = us.user_id
+        INNER JOIN gyms g ON g.gym_id = us.gym_id
+        LEFT JOIN currencies c ON c.currency_id = g.currency_id
+        WHERE gsp.eval_expiration = 1
+          AND us.status IN ('active', 'expired')
+          AND u.email IS NOT NULL AND TRIM(u.email) != ''
+          AND (
+              DATEDIFF(us.end_date, ?) = gsp.reminder_days_before
+              OR DATEDIFF(us.end_date, ?) = 0
+              OR (DATEDIFF(us.end_date, ?) < 0 AND DATEDIFF(us.end_date, ?) >= -gsp.reminder_days_after)
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM user_subscriptions us_next
+              WHERE us_next.user_id = us.user_id
+                AND us_next.gym_id = us.gym_id
+                AND us_next.user_subscription_id != us.user_subscription_id
+                AND us_next.status IN ('active', 'scheduled')
+                AND us_next.end_date > us.end_date
+          )
+          ${gymFilterSql}
+          ${forceFilterSql}
+        ORDER BY us.gym_id ASC, us.end_date ASC, us.user_subscription_id ASC;
+    `;
+
+    const [rows] = await db.query(query, queryParams);
+    return rows;
+};
+
+/**
+ * Registra el resultado del envío en subscription_email_logs
+ */
+const logSubscriptionEmail = async (logData) => {
+    const {
+        user_subscription_id,
+        user_id,
+        gym_id,
+        email,
+        notification_type,
+        diff_days,
+        sent_date,
+        status = 'SENT',
+        error_message = null
+    } = logData;
+
+    const [result] = await db.query(
+        `INSERT INTO subscription_email_logs
+         (user_subscription_id, user_id, gym_id, email, notification_type, diff_days, sent_date, status, error_message)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            sent_at = CURRENT_TIMESTAMP,
+            status = VALUES(status),
+            error_message = VALUES(error_message)`,
+        [user_subscription_id, user_id, gym_id, email, notification_type, diff_days, sent_date, status, error_message]
+    );
+    return result;
+};
+
 module.exports = {
     getGymWeekWindow,
     getPlans,
@@ -507,5 +649,8 @@ module.exports = {
     validateAndCheckin,
     getUserAttendances,
     getUserSubscriptionHistory,
-    getPaymentMethods
+    getPaymentMethods,
+    updateExpiredSubscriptions,
+    getSubscriptionsNeedingReminders,
+    logSubscriptionEmail
 };

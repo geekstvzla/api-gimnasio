@@ -1,0 +1,162 @@
+/* ===================================================
+   SUBSCRIPTION REMINDER EMAIL STYLES
+   api-gimnasio
+   =================================================== */
+
+.reminder-badge {
+    display: inline-block;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    padding: 8px 22px;
+    border-radius: 9999px;
+    margin-bottom: 18px;
+}
+
+.reminder-badge.expiring-soon {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.reminder-badge.expires-today {
+    background: linear-gradient(135deg, #D97706 0%, #B45309 100%);
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.35);
+}
+
+.reminder-badge.expired {
+    background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
+}
+
+.reminder-title {
+    color: #0F172A !important;
+    font-size: 24px !important;
+    font-weight: 800 !important;
+    line-height: 1.3 !important;
+    margin: 0 0 16px 0 !important;
+    text-align: center !important;
+}
+
+.reminder-hero-card {
+    border-radius: 16px;
+    padding: 22px 20px;
+    margin: 18px 0 24px 0;
+    text-align: center;
+}
+
+.reminder-hero-card.expiring-soon {
+    background: linear-gradient(180deg, #EFF6FF 0%, #DBEAFE 100%);
+    border: 2px solid #BFDBFE;
+}
+
+.reminder-hero-card.expires-today {
+    background: linear-gradient(180deg, #FEF3C7 0%, #FDE68A 100%);
+    border: 2px solid #FCD34D;
+}
+
+.reminder-hero-card.expired {
+    background: linear-gradient(180deg, #FEE2E2 0%, #FECACA 100%);
+    border: 2px solid #FCA5A5;
+}
+
+.reminder-hero-icon {
+    font-size: 42px;
+    line-height: 1;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.reminder-highlight-text {
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+}
+
+.reminder-highlight-text.expiring-soon {
+    color: #1E40AF !important;
+}
+
+.reminder-highlight-text.expires-today {
+    color: #92400E !important;
+}
+
+.reminder-highlight-text.expired {
+    color: #991B1B !important;
+}
+
+.reminder-message {
+    color: #334155 !important;
+    font-size: 15px !important;
+    line-height: 1.6 !important;
+    margin: 16px 0 !important;
+    text-align: left !important;
+}
+
+.plan-details-table {
+    width: 100%;
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    margin: 20px 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.plan-details-table td {
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid #F1F5F9;
+}
+
+.plan-details-table tr:last-child td {
+    border-bottom: none;
+}
+
+.plan-details-label {
+    color: #64748B;
+    font-weight: 600;
+    width: 40%;
+}
+
+.plan-details-value {
+    color: #0F172A;
+    font-weight: 700;
+    text-align: right;
+}
+
+.btn-renew {
+    display: inline-block;
+    color: #FFFFFF !important;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 13px 32px;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.btn-renew.expiring-soon,
+.btn-renew.expires-today {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+}
+
+.btn-renew.expired {
+    background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+}
+
+.reminder-footer-note {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 24px 0 10px 0;
+    font-size: 13px !important;
+    color: #64748B !important;
+    line-height: 1.5 !important;
+    text-align: center;
+}

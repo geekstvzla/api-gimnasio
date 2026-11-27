@@ -297,4 +297,44 @@ router.all('/cron/birthday-emails', async function (req, res, next) {
     }
 });
 
+/**
+ * ALL /gym/cron/subscription-reminders
+ * Endpoint para disparar el proceso de recordatorios de vencimiento vía Webhook / Cron HTTP
+ */
+const { runSubscriptionReminders } = require('../scripts/send-subscription-reminders.js');
+
+router.all('/cron/subscription-reminders', async function (req, res, next) {
+    try {
+        const payload = Object.assign({}, req.query, req.body);
+        const cronSecret = process.env.CRON_SECRET;
+        if (cronSecret && payload.secret !== cronSecret) {
+            return res.status(403).send({
+                status: 'error',
+                statusCode: 0,
+                message: 'No autorizado para ejecutar esta tarea'
+            });
+        }
+
+        const summary = await runSubscriptionReminders({
+            dryRun: payload.dryRun === 'true' || payload.dryRun === true,
+            force: payload.force === 'true' || payload.force === true,
+            targetDate: payload.date || payload.targetDate || null,
+            gymId: payload.gymId || payload.gym_id || null,
+            testEmail: payload.testEmail || payload.test_email || null
+        });
+
+        res.send({
+            status: 'success',
+            statusCode: 1,
+            summary
+        });
+    } catch (err) {
+        res.status(500).send({
+            status: 'error',
+            statusCode: 0,
+            message: err.message || 'Error al procesar recordatorios de suscripciones'
+        });
+    }
+});
+
 module.exports = router;

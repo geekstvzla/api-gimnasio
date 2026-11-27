@@ -1,0 +1,6 @@
+if notificationType === 'EXPIRING_SOON'
+    | ⏳ Tu plan en #{gymName} está próximo a vencer (#{diffDays} días restantes)
+else if notificationType === 'EXPIRES_TODAY'
+    | 🔔 Tu plan en #{gymName} vence el día de hoy
+else
+    | ⚠️ Aviso: Tu plan en #{gymName} ha vencido

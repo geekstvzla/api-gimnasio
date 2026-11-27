@@ -1,0 +1,79 @@
+extends ../../layout
+
+block head_styles
+    style
+        include ../../../assets/css/emails/subscriptionReminder.css
+
+block subtitle
+    p.subtitle= gymSubtitle || "Control y seguimiento de tu membresía deportiva."
+
+block content
+    div(style="text-align: center;")
+        if notificationType === 'EXPIRING_SOON'
+            span.reminder-badge.expiring-soon ⏳ Próximo a Vencer
+        else if notificationType === 'EXPIRES_TODAY'
+            span.reminder-badge.expires-today 🔔 Vence Hoy
+        else
+            span.reminder-badge.expired ⚠️ Plan Vencido
+
+    h2.reminder-title Hola, #{userName}
+
+    if notificationType === 'EXPIRING_SOON'
+        div.reminder-hero-card.expiring-soon
+            span.reminder-hero-icon ⏳
+            p.reminder-highlight-text.expiring-soon
+                | Tu plan de entrenamiento está a #{diffDays} días de vencer
+
+        p.reminder-message
+            | Te escribimos de parte de #[strong #{gymName}] para recordarte que tu plan actual vencerá el próximo #[strong #{endDateFormatted}].
+            br
+            | Te invitamos a renovar tu membresía con anticipación para seguir disfrutando de tus entrenamientos sin interrupciones. ¡Recuerda que si renuevas antes de que venza, no pierdes ningún día de tu plan actual!
+
+    else if notificationType === 'EXPIRES_TODAY'
+        div.reminder-hero-card.expires-today
+            span.reminder-hero-icon 🔔
+            p.reminder-highlight-text.expires-today
+                | ¡Hoy es el último día de vigencia de tu plan!
+
+        p.reminder-message
+            | Queremos recordarte que tu plan en #[strong #{gymName}] vence #[strong hoy, #{endDateFormatted}].
+            br
+            | Pasa por recepción o contáctanos para realizar tu renovación y mantener tu acceso activo para tus próximas sesiones de entrenamiento.
+
+    else
+        div.reminder-hero-card.expired
+            span.reminder-hero-icon ⚠️
+            p.reminder-highlight-text.expired
+                | Tu plan de suscripción ha vencido
+
+        p.reminder-message
+            | Te informamos que tu membresía en #[strong #{gymName}] venció el día #[strong #{endDateFormatted}].
+            br
+            | Para reactivar tu acceso y continuar con tus metas físicas y deportivas, puedes renovar tu plan en cualquier momento comunicándote con nosotros o acercándote al gimnasio.
+
+    table.plan-details-table
+        tr
+            td.plan-details-label Gimnasio:
+            td.plan-details-value #{gymName}
+        tr
+            td.plan-details-label Plan Actual:
+            td.plan-details-value #{planName}
+        tr
+            td.plan-details-label Fecha de Vencimiento:
+            td.plan-details-value #{endDateFormatted}
+        if priceFormatted
+            tr
+                td.plan-details-label Monto Habitual:
+                td.plan-details-value #{priceFormatted}
+
+    if gymUrl
+        div(style="text-align: center; margin: 26px 0 16px 0;")
+            if notificationType === 'EXPIRED'
+                a.btn-renew.expired(href=gymUrl target="_blank")
+                    | Reactivar Mi Plan Ahora 🚀
+            else
+                a.btn-renew.expiring-soon(href=gymUrl target="_blank")
+                    | Renovar Plan en #{gymName} 🚀
+
+    div.reminder-footer-note
+        | 💬 Si ya realizaste el pago de tu renovación el día de hoy en recepción, puedes hacer caso omiso a este mensaje mientras el personal confirma la transacción. ¡Gracias por entrenar con nosotros!

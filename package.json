@@ -5,7 +5,8 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "update-exchange-rate": "node ./scripts/update-exchange-rate.js",
-    "send-birthday-emails": "node ./scripts/send-birthday-emails.js"
+    "send-birthday-emails": "node ./scripts/send-birthday-emails.js",
+    "send-subscription-reminders": "node ./scripts/send-subscription-reminders.js"
   },
   "dependencies": {
     "axios": "^1.16.0",
