@@ -8,6 +8,8 @@ const gymInfo = (slug) => {
         let queryString = `SELECT g.gym_id,
                                   g.name,
                                   g.slug,
+                                  COALESCE(g.primary_color, '#2563eb') AS primary_color,
+                                  COALESCE(g.secondary_color, '#1d4ed8') AS secondary_color,
                                   COALESCE(g.currency_id, 3) AS currency_id,
                                   COALESCE(c.symbol, '€') AS currency_symbol,
                                   COALESCE(c.abbreviation, 'EUR') AS currency_abbreviation,
